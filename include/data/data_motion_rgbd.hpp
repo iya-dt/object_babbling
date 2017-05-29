@@ -2,7 +2,7 @@
 // Created by phlf on 22/07/16.
 //
 #include "cafer_core/cafer_core.hpp"
-#include <dream_babbling/rgbd_motion_data.h>
+#include <object_babbling/rgbd_motion_data.h>
 
 #include <sstream>
 
@@ -25,8 +25,8 @@ public:
         std::stringstream buffer_to_encode_0;
         std::stringstream buffer_to_encode_1;
 
-        cafer_core::shared_ptr<dream_babbling::rgbd_motion_data> msg;
-        msg = _stored_msg.instantiate<dream_babbling::rgbd_motion_data>();
+        cafer_core::shared_ptr<object_babbling::rgbd_motion_data> msg;
+        msg = _stored_msg.instantiate<object_babbling::rgbd_motion_data>();
 
         depth = cv_bridge::toCvShare(msg->depth, nullptr)->image;
         depth = cv::Mat(depth.rows, depth.cols, CV_8UC4, depth.data);

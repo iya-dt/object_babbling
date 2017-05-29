@@ -2,7 +2,7 @@
 // Created by phlf on 22/07/16.
 //
 #include "cafer_core/cafer_core.hpp"
-#include <dream_babbling/pose_goalAction.h>
+#include <object_babbling/pose_goalAction.h>
 #include <yaml-cpp/yaml.h>
 
 class DataController : public cafer_core::Data {
@@ -15,8 +15,8 @@ public:
         std::map<std::string, std::string> serialized_data;
         YAML::Emitter joints_yml;
 
-        cafer_core::shared_ptr<dream_babbling::pose_goalActionFeedback> msg;
-        msg = _stored_msg.instantiate<dream_babbling::pose_goalActionFeedback>();
+        cafer_core::shared_ptr<object_babbling::pose_goalActionFeedback> msg;
+        msg = _stored_msg.instantiate<object_babbling::pose_goalActionFeedback>();
 
         frame_id = "frame_" + std::to_string(msg->header.stamp.sec + msg->header.stamp.nsec);
 
