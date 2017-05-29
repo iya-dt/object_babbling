@@ -125,7 +125,8 @@ public :
         // Object extraction
         ROS_INFO_STREAM("IMAGE_PROCESSING_NODE : extract objects");
         double saliency_threshold = 0.2;
-        _targets = soi.get_objects(modality, saliency_threshold);
+        int points_threshold = 30;
+        _targets = soi.get_objects(modality, saliency_threshold, points_threshold);
 
         _targets_ptcl = ip::PointCloudT::Ptr(new ip::PointCloudT);
         for (auto it = _targets.begin(); it != _targets.end(); it++) {
@@ -372,6 +373,9 @@ public :
         _classifier = iagmm::NNMap(3, 2, 0.3, 0.05);
         _classifier.set_samples(_dataset);
 
+        _clouds_ready = false;
+        _tracking = false;
+        _ending_tracking = false;
         _tracked_point << 0.0, 0.0, 0.0, 0.0;
     }
 
@@ -494,9 +498,9 @@ private:
     double _downsampling_grid_size = 0.001;
     std::shared_ptr<KLDAdaptiveParticleFilterOMPTracker<ip::PointT, ParticleXYZRPY> > _tracker;
 
-    bool _clouds_ready = false;
-    bool _tracking = false;
-    bool _ending_tracking = false;
+    bool _clouds_ready;
+    bool _tracking;
+    bool _ending_tracking;
     std::string _classifier_path;
 
     void _update_workspace()

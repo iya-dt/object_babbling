@@ -6,7 +6,7 @@
 #include <boost/timer.hpp>
 #include <cafer_core/cafer_core.hpp>
 
-#include <dream_babbling/pose_goalAction.h>
+#include <object_babbling/pose_goalAction.h>
 #include <actionlib/server/simple_action_server.h>
 
 #include <ros/callback_queue.h>
@@ -23,7 +23,7 @@
 #include <crustcrawler_mover_utils/move_crustcrawler_arm.h>
 #include <crustcrawler_core_msgs/EndEffectorCommand.h>
 
-using namespace dream_babbling;
+using namespace object_babbling;
 using namespace cafer_core;
 
 class Controller: public Component{
@@ -35,7 +35,7 @@ public :
         XmlRpc::XmlRpcValue glob_params;
         std::stringstream display_params;
 
-        cafer_core::ros_nh->getParam("/dream_babbling/params", glob_params);
+        cafer_core::ros_nh->getParam("/object_babbling/params", glob_params);
         for (auto& param:glob_params) {
             display_params << "\t" << param.first << ":\t" << param.second << std::endl;
         }
@@ -188,7 +188,7 @@ private:
     crustcrawler_mover_utils::move_crustcrawler_arm::Request _motion_request;
     crustcrawler_mover_utils::move_crustcrawler_arm::Response _motion_response;
     crustcrawler_mover::CRUSTCRAWLER_Mover::Ptr _crustcrawler_mover;
-    dream_babbling::pose_goalFeedback _joints_pose_feedback;
+    object_babbling::pose_goalFeedback _joints_pose_feedback;
     std::map<std::string, double> _home_variable_values;
     moveit::planning_interface::MoveGroup::Plan _group_plan;
     std::vector<geometry_msgs::Pose> waypoints_;

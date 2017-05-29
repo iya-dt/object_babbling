@@ -2,8 +2,8 @@
 #include <rgbd_utils/rgbd_subscriber.hpp>
 #include <image_processing/MotionDetection.h>
 #include <image_processing/default_parameters.hpp>
-#include <dream_babbling/rgbd_motion_data.h>
-#include <dream_babbling/is_moving.h>
+#include <object_babbling/rgbd_motion_data.h>
+#include <object_babbling/is_moving.h>
 #include "globals.h"
 #include <cv_bridge/cv_bridge.h>
 
@@ -28,8 +28,8 @@ public:
                                  const sensor_msgs::CameraInfoConstPtr& rgb_info_msg,
                                  const sensor_msgs::CameraInfoConstPtr& depth_info_msg)
         {
-            dream_babbling::rgbd_motion_data msg;
-            dream_babbling::motion_rect serialized_rect;
+            object_babbling::rgbd_motion_data msg;
+            object_babbling::motion_rect serialized_rect;
             std::vector<cv::Rect> motion_ROIs;
             cv_bridge::CvImagePtr cv_ptr;
             try {
@@ -77,7 +77,7 @@ public:
 
         XmlRpc::XmlRpcValue params;
 
-        cafer_core::ros_nh->getParam("/dream_babbling/params", params);
+        cafer_core::ros_nh->getParam("/object_babbling/params", params);
 
 //        cafer_core::ros_nh->getParam("ite_end_topic_name",ite_end_topic_name);
 
@@ -85,7 +85,7 @@ public:
 
         mt_callback_nh.setCallbackQueue(&_image_processing_cb_q);
         _motion_data_publisher.reset(new ros::Publisher(
-                mt_callback_nh.advertise<dream_babbling::rgbd_motion_data>(ros::this_node::getName(), 5)));
+                mt_callback_nh.advertise<object_babbling::rgbd_motion_data>(ros::this_node::getName(), 5)));
 
         _rgbd_subscriber.reset(new rgbd_utils::RGBD_Subscriber(
                 params["rgb_info_topic"], params["rgb_topic"], params["depth_info_topic"],
@@ -111,16 +111,19 @@ public:
     }
 
     void update() override
-    {};
+    {
 
-    void end_iteration_cb(const std_msgs::BoolConstPtr& is_finish){
+    };
+
+    void end_iteration_cb(const std_msgs::BoolConstPtr& is_finish)
+    {
         if(is_finish->data){
             ROS_INFO_STREAM("MOTION_DETECTOR : iteration is finish");
 //            _current_past_frame[1].copyTo(_current_past_frame[0]);
         }
     }
 
-    bool is_moving_cb(dream_babbling::is_moving::Request& req, dream_babbling::is_moving::Response& rep)
+    bool is_moving_cb(object_babbling::is_moving::Request& req, object_babbling::is_moving::Response& rep)
     {
         ROS_INFO_STREAM("MOTION_DETECTOR : is_moving_cb");
         try {
