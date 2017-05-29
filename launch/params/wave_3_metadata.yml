@@ -1,0 +1,16 @@
+type:  "babbling"
+sequential:  true
+data_structure:
+  depth:  "depth.yml"
+  rgb:  "rgb.yml"
+  motion:  "motion_rects.yml"
+  joints_values:  "controller_feedback.yml"
+topics:
+  data:
+    motion: "/object_babbling/motion_detector_node"
+    joints_values: "/object_babbling/controller_node/controller_node/feedback"
+  servers:
+    controller_server: "controller_node"
+    database_server: "/object_babbling/db_manager_node"
+  services:
+    motion_detector_service: "/object_babbling/motion_detector_node/is_moving"

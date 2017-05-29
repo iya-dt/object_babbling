@@ -1,0 +1,19 @@
+<launch>
+    <arg name="ns" default="cafer_core"/>
+    <arg name="exec_name" default="db_manager_node"/>
+
+    <!--CAFER-->
+    <arg name="cafer_type" default="$(arg exec_name)"/>
+    <arg name="managed_uuid" default="none"/>
+    <!--/CAFER-->
+
+    <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" ns="$(arg ns)" output="screen">
+    <!-- <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" ns="$(arg ns)" output="screen" launch-prefix="xterm -e gdb -args"> -->
+        <rosparam ns="cafer" subst_value="True">
+            mgmt: "/management_topic"
+            freq: 1.0
+            type: "$(arg cafer_type)"
+            uuid: "$(arg managed_uuid)"
+        </rosparam>
+    </node>
+</launch>

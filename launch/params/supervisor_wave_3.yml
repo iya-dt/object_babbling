@@ -1,0 +1,22 @@
+## Take care not to declare cyclic dependencies, like:
+## A:
+##  depends_on: "B"
+## B:
+##  depends_on: "A"
+managed:
+  object_babbling:
+    motion_detector:
+      launch: "motion_detector.launch"
+      depends_on: "openni2"
+    robot_controller:
+      launch: "robot_controller.launch"
+    image_processing:
+      launch: "image_processing.launch"
+      depends_on: "motion_detector"
+    babbling:
+      launch: "babbling.launch"
+      depends_on: "openni2,motion_detector,robot_controller,image_processing"
+externals:
+  openni2_launch:
+    openni2:
+      launch: "openni2.launch"

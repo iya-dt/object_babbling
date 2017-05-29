@@ -1,0 +1,21 @@
+<launch>
+    <arg name="ns" default="object_babbling"/>
+    <arg name="exec_name" default="babbling_node"/>
+
+    <!--CAFER-->
+    <arg name="cafer_type" default="$(arg exec_name)"/>
+    <arg name="managed_uuid" default="none"/>
+    <!--/CAFER-->
+
+    <rosparam command="load" file="$(find object_babbling)/launch/params/global_params.yml"/>
+    <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" output="screen">
+    <!-- <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" output="screen" launch-prefix="xterm -e gdb -args"> -->
+        <rosparam ns="cafer" subst_value="True">
+            mgmt: "/management_topic"
+            freq: 1.0
+            type: "$(arg cafer_type)"
+            uuid: "$(arg managed_uuid)"
+        </rosparam>
+        <rosparam command="load" file="$(find object_babbling)/launch/params/experiment_settings.yml" ns="experiment"/>
+    </node>
+</launch>
