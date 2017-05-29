@@ -79,8 +79,6 @@ public:
 
         cafer_core::ros_nh->getParam("/object_babbling/params", params);
 
-//        cafer_core::ros_nh->getParam("ite_end_topic_name",ite_end_topic_name);
-
         ros::NodeHandle mt_callback_nh;
 
         mt_callback_nh.setCallbackQueue(&_image_processing_cb_q);
@@ -119,7 +117,6 @@ public:
     {
         if(is_finish->data){
             ROS_INFO_STREAM("MOTION_DETECTOR : iteration is finish");
-//            _current_past_frame[1].copyTo(_current_past_frame[0]);
         }
     }
 
@@ -132,8 +129,6 @@ public:
             cv::Mat mask = cv_bridge::toCvCopy(req.supervoxel, sensor_msgs::image_encodings::MONO8)->image;
             _current_past_frame[0].copyTo(frames[0], mask);
             _current_past_frame[1].copyTo(frames[1], mask);
-
-            //        _3d_coord_to_pixel_coord(position,req.pose);
 
             _image_worker.setInputFrames(frames);
             cv::Mat diff;
@@ -204,7 +199,6 @@ int main(int argc, char** argv)
     MotionSensor motion_detect(cafer["mgmt"], cafer["type"], cafer["freq"], cafer["uuid"]);
 
     motion_detect.wait_for_init();
-//    std::this_thread::sleep_for(std::chrono::seconds(3));
     motion_detect.spin();
 
     while (ros::ok() && (!motion_detect.get_terminate())) {

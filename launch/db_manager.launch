@@ -7,11 +7,12 @@
     <arg name="managed_uuid" default="none"/>
     <!--/CAFER-->
 
-    <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" ns="$(arg ns)" output="screen">
-    <!-- <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" ns="$(arg ns)" output="screen" launch-prefix="xterm -e gdb -args"> -->
+    <rosparam command="load" file="$(find object_babbling)/launch/params/global_params.yml" ns="$(arg ns)"/>
+    <!-- <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" ns="$(arg ns)" output="screen"> -->
+    <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" ns="$(arg ns)" output="screen" launch-prefix="xterm -e gdb --args">
         <rosparam ns="cafer" subst_value="True">
             mgmt: "/management_topic"
-            freq: 1.0
+            freq: 10.0
             type: "$(arg cafer_type)"
             uuid: "$(arg managed_uuid)"
         </rosparam>

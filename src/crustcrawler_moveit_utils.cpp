@@ -29,7 +29,7 @@ using namespace cafer_core;
 class Controller: public Component{
     using Component::Component; // C++11 requirement to inherit the constructor
 
-public :
+public:
 
     void client_connect_to_ros(){
         XmlRpc::XmlRpcValue glob_params;
@@ -73,11 +73,6 @@ public :
 
         _crustcrawler_mover->group->setPlannerId(static_cast<std::string>(_crustcrawler_mover->global_parameters.get_planner_parameters()["planner_id"]));
         _crustcrawler_mover->group->setPlanningTime(std::stod(_crustcrawler_mover->global_parameters.get_planner_parameters()["planning_time"]));
-        /*
-    _motion_request.type = "go_home";
-    _motion_request.goal = {0.05, -0.2, 0.54};
-    _move_crustcrawler_arm->call(_motion_request, _motion_response);
-    */
         _crustcrawler_mover->group->setJointValueTarget(_home_variable_values);
         if(_crustcrawler_mover->group->plan(_group_plan))
             _crustcrawler_mover->group->execute(_group_plan);
@@ -101,7 +96,6 @@ public :
     void extract_arm_joints_values(){
         std::vector<std::string> joint_names;
         std::vector<double> joint_values;
-        //std::vector<int> joint_index;
         joint_names = _crustcrawler_mover->global_parameters.get_crustcrawler_arm_joints_names();
 
         for(unsigned i = 0; i < joint_names.size(); ++i){
@@ -173,8 +167,6 @@ public :
         }
 
     }
-
-
 
     void client_disconnect_from_ros(){}
     void update(){}

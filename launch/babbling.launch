@@ -12,7 +12,7 @@
     <!-- <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" output="screen" launch-prefix="xterm -e gdb -args"> -->
         <rosparam ns="cafer" subst_value="True">
             mgmt: "/management_topic"
-            freq: 1.0
+            freq: 10.0
             type: "$(arg cafer_type)"
             uuid: "$(arg managed_uuid)"
         </rosparam>

@@ -61,7 +61,7 @@ using namespace object_babbling;
 class ImageProcessing : public Component {
     using Component::Component;
 
-public :
+public:
 
     ~ImageProcessing()
     {

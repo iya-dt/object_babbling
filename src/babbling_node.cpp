@@ -43,7 +43,7 @@ using namespace object_babbling;
 class Babbling : public Component {
     using Component::Component;
 
-public :
+public:
 
     ~Babbling()
     {
@@ -117,7 +117,6 @@ public :
                 static_cast<std::string>(glob_params["database_server"]) + "/status", 1,
                 boost::bind(&Babbling::_done_callback, this, _1)))
         );
-        ROS_ERROR_STREAM("KIKOU " <<  static_cast<std::string>(glob_params["database_server"]));
     }
 
     void init() override
@@ -331,8 +330,6 @@ private:
 
     Vector4d _target_center;
     Vector4d _target_normal;
-
-    // std::unique_ptr<ip::workspace_t> _workspace;
 
     bool _robot_controller_ready = true;
     bool _db_ready;

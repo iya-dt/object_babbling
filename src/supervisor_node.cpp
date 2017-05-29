@@ -15,7 +15,6 @@ class Supervisor_node : public cc::Supervisor {
     using cc::Supervisor::Supervisor;
 public:
 
-
     void database_manager_cb(const cc::DBManagerConstPtr& status_msg){
 
         auto type = static_cast<cc::DatabaseManager::Response>(status_msg->type);
@@ -36,9 +35,6 @@ public:
             ROS_WARN_STREAM("SUPERVISOR : DBManager unknown response message receive");
         }
     }
-
-
-
 
     /**
      * Check state of managed components.
@@ -88,7 +84,6 @@ int main(int argc, char** argv)
     Supervisor_node supervisor(cafer["mgmt"], cafer["type"], cafer["freq"],cafer["uuid"]);
 
     supervisor.wait_for_init();
-//    std::this_thread::sleep_for(std::chrono::seconds(3));
     supervisor.spin();
 
     while (ros::ok() && !supervisor.get_terminate()) {
