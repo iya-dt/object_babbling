@@ -53,6 +53,8 @@ set(EXPERIMENT_SOURCE_FILES src/babbling_node.cpp include/globals.h)
 set(IP_SOURCE_FILES src/image_processing_node.cpp include/globals.h)
 set(SUPERVISOR_SOURCE_FILES src/supervisor_node.cpp)
 
+set(TRACKING_TEST_SOURCE_FILES tools/tracking_test.cpp)
+
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
 ## See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
@@ -186,6 +188,8 @@ add_executable(controller_node ${ROBOT_SOURCE_FILES})
 add_executable(db_manager_node ${DATABASE_SOURCE_FILES})
 add_executable(supervisor_node ${SUPERVISOR_SOURCE_FILES})
 
+add_executable(tracking_test_node ${TRACKING_TEST_SOURCE_FILES})
+
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
 ## target back to the shorter version for ease of user use
@@ -201,16 +205,20 @@ add_dependencies(image_processing_node object_babbling_generate_messages_cpp ${c
 add_dependencies(controller_node object_babbling_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
 add_dependencies(db_manager_node object_babbling_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
 
+add_dependencies(tracking_test_node object_babbling_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
+
 ## Specify libraries to link a library or executable target against
 # target_link_libraries(${PROJECT_NAME}_node
 #   ${catkin_LIBRARIES}
 # )
 target_link_libraries(motion_detector_node ${catkin_LIBRARIES} image_processing iagmm ${OpenCV_LIBRARIES} tbb)
-target_link_libraries(babbling_node ${catkin_LIBRARIES} ${PCL_LIBRARIES}  ${OpenCV_LIBRARIES} yaml-cpp.so tbb)
+target_link_libraries(babbling_node ${catkin_LIBRARIES} image_processing ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} yaml-cpp.so tbb)
 target_link_libraries(image_processing_node ${catkin_LIBRARIES} image_processing iagmm ${PCL_LIBRARIES}  ${OpenCV_LIBRARIES} yaml-cpp.so tbb)
 target_link_libraries(db_manager_node ${catkin_LIBRARIES} ${BASE64} yaml-cpp.so)
 target_link_libraries(controller_node ${ROBOT_LIBS})
 target_link_libraries(supervisor_node ${catkin_LIBRARIES})
+
+target_link_libraries(tracking_test_node ${catkin_LIBRARIES} image_processing ${PCL_LIBRARIES} tbb)
 
 #############
 ## Install ##

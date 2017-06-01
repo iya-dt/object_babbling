@@ -24,9 +24,12 @@
 #include <pcl/tracking/particle_filter_omp.h>
 #include <pcl/tracking/coherence.h>
 #include <pcl/tracking/distance_coherence.h>
-#include <pcl/tracking/hsv_color_coherence.h>
+// #include <pcl/tracking/hsv_color_coherence.h>
+// #include <pcl/tracking/normal_coherence.h>
 #include <pcl/tracking/approx_nearest_pair_point_cloud_coherence.h>
 #include <pcl/tracking/nearest_pair_point_cloud_coherence.h>
+#include <pcl/registration/correspondence_rejection_sample_consensus.h>
+#include <pcl/filters/extract_indices.h>
 
 #include <rgbd_utils/rgbd_subscriber.hpp>
 #include <rgbd_utils/rgbd_to_pointcloud.h>
@@ -122,11 +125,19 @@ public:
         }
 
 
-        // Object extraction
+        // Objects extraction
         ROS_INFO_STREAM("IMAGE_PROCESSING_NODE : extract objects");
         double saliency_threshold = 0.2;
         int points_threshold = 30;
-        _targets = soi.get_objects(modality, saliency_threshold, points_threshold);
+        std::vector<ip::Object> objs = soi.get_objects(modality, saliency_threshold, points_threshold);
+
+
+        // Object correspondance
+        // none
+        _targets.clear();
+        for (auto it_objs = objs.begin(); it_objs != objs.end(); it_objs++) {
+            _targets.push_back(*it_objs);
+        }
 
         _targets_ptcl = ip::PointCloudT::Ptr(new ip::PointCloudT);
         for (auto it = _targets.begin(); it != _targets.end(); it++) {
@@ -144,12 +155,15 @@ public:
             return false;
         }
 
+        _clouds_ready = true;
+
+
         // DEBUG
         std::string filename = "targets_cloud.pcd";
         pcl::io::savePCDFileASCII(filename, *_targets_ptcl);
 
-        _clouds_ready = true;
 
+        // Send objects
         ROS_INFO_STREAM("IMAGE_PROCESSING_NODE : sending " << _targets.size() << " objects");
         std::stringstream sstream;
         boost::archive::text_oarchive oTextArchive(sstream);
@@ -230,6 +244,14 @@ public:
                 boost::shared_ptr<DistanceCoherence<ip::PointT> > distance_coherence
                   = boost::shared_ptr<DistanceCoherence<ip::PointT> >(new DistanceCoherence<ip::PointT>());
                 coherence->addPointCoherence(distance_coherence);
+
+                // boost::shared_ptr<HSVColorCoherence<ip::PointT> > color_coherence
+                //   = boost::shared_ptr<HSVColorCoherence<ip::PointT> >(new HSVColorCoherence<ip::PointT>());
+                // coherence->addPointCoherence(color_coherence);
+
+                // boost::shared_ptr<NormalCoherence<ip::PointT> > normal_coherence
+                //   = boost::shared_ptr<NormalCoherence<ip::PointT> >(new NormalCoherence<ip::PointT>());
+                // coherence->addPointCoherence(normal_coherence);
 
                 boost::shared_ptr<pcl::search::Octree<ip::PointT> > search (new pcl::search::Octree<ip::PointT>(0.01));
                 coherence->setSearchMethod(search);
@@ -529,10 +551,10 @@ private:
 
     void _gridSampleApprox (const ip::PointCloudT::ConstPtr &cloud, ip::PointCloudT &result, double leaf_size)
     {
-      pcl::ApproximateVoxelGrid<ip::PointT> grid;
-      grid.setLeafSize(static_cast<float>(leaf_size), static_cast<float>(leaf_size), static_cast<float>(leaf_size));
-      grid.setInputCloud(cloud);
-      grid.filter(result);
+        pcl::ApproximateVoxelGrid<ip::PointT> grid;
+        grid.setLeafSize(static_cast<float>(leaf_size), static_cast<float>(leaf_size), static_cast<float>(leaf_size));
+        grid.setInputCloud(cloud);
+        grid.filter(result);
     }
 
 };
