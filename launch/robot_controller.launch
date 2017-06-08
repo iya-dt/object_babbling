@@ -1,5 +1,5 @@
 <launch>
-    <arg name="camera_link_pose" default="0.92 -0.05 0.81 -0.31 -0.03 0.96 -0.02 "/>
+    <arg name="camera_link_pose" default="0.92 -0.05 0.75 -0.31 -0.03 0.96 -0.02 "/>
 
     <arg name="ns" default="object_babbling"/>
     <arg name="exec_name" default="controller_node"/>

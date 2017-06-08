@@ -40,8 +40,11 @@ find_library(BASE64 NAMES b64)
 find_path(RGBD_UTILS_INCLUDE_DIR rgbd_utils/rgbd_subscriber.hpp)
 find_library(RGBD_UTILS_LIBRARY NAMES rgbd_utils)
 
-find_path(IMAGE_PROCESSING_INCLUDE_DIR image_processing/MotionDetection.h)
+find_path(IMAGE_PROCESSING_INCLUDE_DIR image_processing)
 find_library(IMAGE_PROCESSING_LIBRARY NAMES image_processing)
+
+find_path(IAGMM_INCLUDE_DIR iagmm)
+find_library(IAGMM_LIBRARY NAMES iagmm)
 
 ## Crustcrawler
 set(ROBOT_SOURCE_FILES src/crustcrawler_moveit_utils.cpp)
@@ -50,10 +53,7 @@ set(ROBOT_LIBS ${catkin_LIBRARIES})
 set(CAMERA_SOURCE_FILES src/motion_detector_node.cpp)
 set(DATABASE_SOURCE_FILES src/db_manager_node.cpp include/data/data_motion_rgbd.hpp include/data/data_controller_feedback.hpp)
 set(EXPERIMENT_SOURCE_FILES src/babbling_node.cpp include/globals.h)
-set(IP_SOURCE_FILES src/image_processing_node.cpp include/globals.h)
 set(SUPERVISOR_SOURCE_FILES src/supervisor_node.cpp)
-
-set(TRACKING_TEST_SOURCE_FILES tools/tracking_test.cpp)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -97,9 +97,6 @@ add_message_files(
 add_service_files(
   FILES
   is_moving.srv
-  get_targets.srv
-  set_target.srv
-  track.srv
 )
 
 ## Generate actions in the 'action' folder
@@ -150,7 +147,7 @@ catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES object_babbling
   CATKIN_DEPENDS cv_bridge roscpp rospy std_msgs message_runtime cafer_core rgbd_utils
-  DEPENDS ${IMAGE_PROCESSING_LIBRARY}
+  DEPENDS ${IMAGE_PROCESSING_LIBRARY} ${IAGMM_LIBRARY}
 )
 
 ###########
@@ -165,6 +162,7 @@ include_directories(
   ${OpenCV_INCLUDE_DIRS}
   ${RGBD_UTILS_INCLUDE_DIR}
   ${IMAGE_PROCESSING_INCLUDE_DIR}
+  ${IAGMM_INCLUDE_DIR}
 )
 
 ## Declare a C++ library
@@ -183,12 +181,9 @@ include_directories(
 # add_executable(${PROJECT_NAME}_node src/object_babbling_node.cpp)
 add_executable(motion_detector_node ${CAMERA_SOURCE_FILES})
 add_executable(babbling_node ${EXPERIMENT_SOURCE_FILES})
-add_executable(image_processing_node ${IP_SOURCE_FILES})
 add_executable(controller_node ${ROBOT_SOURCE_FILES})
 add_executable(db_manager_node ${DATABASE_SOURCE_FILES})
 add_executable(supervisor_node ${SUPERVISOR_SOURCE_FILES})
-
-add_executable(tracking_test_node ${TRACKING_TEST_SOURCE_FILES})
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -201,24 +196,18 @@ add_executable(tracking_test_node ${TRACKING_TEST_SOURCE_FILES})
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(motion_detector_node object_babbling_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
 add_dependencies(babbling_node object_babbling_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
-add_dependencies(image_processing_node object_babbling_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
 add_dependencies(controller_node object_babbling_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
 add_dependencies(db_manager_node object_babbling_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
-
-add_dependencies(tracking_test_node object_babbling_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
 # target_link_libraries(${PROJECT_NAME}_node
 #   ${catkin_LIBRARIES}
 # )
 target_link_libraries(motion_detector_node ${catkin_LIBRARIES} image_processing iagmm ${OpenCV_LIBRARIES} tbb)
-target_link_libraries(babbling_node ${catkin_LIBRARIES} image_processing ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} yaml-cpp.so tbb)
-target_link_libraries(image_processing_node ${catkin_LIBRARIES} image_processing iagmm ${PCL_LIBRARIES}  ${OpenCV_LIBRARIES} yaml-cpp.so tbb)
+target_link_libraries(babbling_node ${catkin_LIBRARIES} image_processing iagmm ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} yaml-cpp.so tbb)
 target_link_libraries(db_manager_node ${catkin_LIBRARIES} ${BASE64} yaml-cpp.so)
 target_link_libraries(controller_node ${ROBOT_LIBS})
 target_link_libraries(supervisor_node ${catkin_LIBRARIES})
-
-target_link_libraries(tracking_test_node ${catkin_LIBRARIES} image_processing ${PCL_LIBRARIES} tbb)
 
 #############
 ## Install ##
