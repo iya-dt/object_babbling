@@ -40,6 +40,7 @@
 #include <iagmm/nnmap.hpp>
 
 #include <image_processing/pcl_types.h>
+#include <image_processing/features.hpp>
 #include <image_processing/BabblingDataset.h>
 #include <image_processing/SupervoxelSet.h>
 #include <image_processing/SurfaceOfInterest.h>
@@ -72,7 +73,7 @@ public:
 
     typedef iagmm::GMM Classifier;
     typedef iagmm::NNMap SaliencyClassifier;
-    typedef ip::ObjectHyp<Classifier> ObjectHyp;
+    typedef ip::Object<Classifier> ObjectHyp;
 
     ~Babbling()
     {
@@ -126,6 +127,11 @@ public:
                 glob_params["saliency_ptcl"], 10)
             )
         );
+        _object_saliency_ptcl_pub.reset(
+            new Publisher(ros_nh->advertise<sensor_msgs::PointCloud2>(
+                glob_params["object_saliency_ptcl"], 10)
+            )
+        );
 
         _target_ptcl_pub.reset(
             new Publisher(ros_nh->advertise<sensor_msgs::PointCloud2>(
@@ -145,12 +151,12 @@ public:
 
         _target_point_pub.reset(
             new Publisher(ros_nh->advertise<sensor_msgs::PointCloud2>(
-                glob_params["target_point_topic"], 5)
+                glob_params["target_point_topic"], 10)
             )
         );
         _tracked_point_pub.reset(
             new Publisher(ros_nh->advertise<sensor_msgs::PointCloud2>(
-                glob_params["tracked_point_topic"], 5)
+                glob_params["tracked_point_topic"], 10)
             )
         );
 
@@ -173,8 +179,11 @@ public:
         _update_workspace();
 
         _saliency_dataset = load_dataset(_classifier_path);
-        _saliency_classifier = iagmm::NNMap(3, 2, 0.3, 0.05);
+        _saliency_classifier = SaliencyClassifier(3, 2, 0.3, 0.05);
         _saliency_classifier.set_samples(_saliency_dataset);
+        _saliency_modality = "normal";
+
+        _modality = "fpfh";
 
         _target_center << 0.0, 0.0, 0.0, 0.0;
         _tracked_center << 0.0, 0.0, 0.0, 0.0;
@@ -210,6 +219,7 @@ public:
 
         _ptcl_pub.reset();
         _saliency_ptcl_pub.reset();
+        _object_saliency_ptcl_pub.reset();
 
         _target_ptcl_pub.reset();
         _tracked_ptcl_pub.reset();
@@ -230,30 +240,57 @@ public:
         if (_db_init) {
             if (_db_ready && !_recording) {
                 ROS_WARN_STREAM("BABBLING_NODE : begin iteration");
+
                 // Initialize the iteration
-                _supervoxels = _extract_supervoxels();
-                _saliency_weights = _compute_saliency_map(_supervoxels,
-                                                          _saliency_classifier,
-                                                          boost::bind(&Babbling::_normal_features_extractor, this, _1));
-                _weights = _compute_weights(_supervoxels, _objects_hypotheses);
+                _surface = _extract_surface(_saliency_modality, _modality);
+
+                _surface.init_weights(_saliency_modality, 0.5);
+                _surface.compute_weights<SaliencyClassifier>(_saliency_modality, _saliency_classifier);
 
                 // Select object hypothesis
-                _hypothesis_id = _choose_hypothesis(_supervoxels, _objects_hypotheses, _weights);
+                if (_objects_hypotheses.size() != 0) {
+                    _hypothesis_id = _choose_hypothesis(_surface, _objects_hypotheses);
+                }
+                else {
+                    ObjectHyp new_hyp = _new_hypothesis(
+                        _surface,
+                        _saliency_modality,
+                        _modality
+                    );
+                    _objects_hypotheses.push_back(new_hyp);
 
+                    _hypothesis_id = _objects_hypotheses.size() - 1;
+                }
+
+                ROS_INFO_STREAM("BABBLING_NODE : " << _objects_hypotheses.size() << " hypothesis availables");
+                int nb_s = _objects_hypotheses[_hypothesis_id].get_classifier().number_of_samples();
+                ROS_INFO_STREAM("BABBLING_NODE : " << nb_s << " samples in hypothesis " << _hypothesis_id);
+
+                // Feedback information
+                // _saliency_weights = _surface.get_weights()[_saliency_modality];
+                _weights = _compute_object_weights(
+                    _surface,
+                    _objects_hypotheses
+                );
+
+
+                _saliency_ptcl = _surface.getColoredWeightedCloud(_saliency_modality).makeShared();
+                _object_saliency_ptcl = _surface.getColoredWeightedCloud(_weights[_hypothesis_id]).makeShared();
+                _clouds_ready = true;
+
+                publish_feedback();
 
                 _start_db_recording();
             }
 
             if (_robot_controller_ready && _recording) {
-                // Choose an action and perform
-                uint32_t target_label = _choose_target(_saliency_weights, _weights[_hypothesis_id]);
-                ip::SupervoxelArray svs = _supervoxels.getSupervoxels();
-
-                _objects_hypotheses[_hypothesis_id].set_initial(_supervoxels, target_label);
+                _objects_hypotheses[_hypothesis_id].set_initial(_surface);
 
                 _target_ptcl = _objects_hypotheses[_hypothesis_id].get_initial_cloud();
+                ROS_INFO_STREAM("BABBLING_NODE : target cloud size " << _target_ptcl->size());
                 pcl::compute3DCentroid<ip::PointT>(*_target_ptcl, _target_center);
 
+                // Choosing an action
                 Vector4d target_center_robot;
                 babbling::base_conversion(target_center_robot, _target_center);
 
@@ -278,14 +315,14 @@ public:
                 _client_controller->waitForResult(ros::Duration(1.0));
                 auto client_status = _client_controller->getState();
                 if (client_status == actionlib::SimpleClientGoalState::SUCCEEDED) {
-                    ROS_INFO_STREAM("BABBLING_NODE : position reached.");
+                    ROS_INFO_STREAM("BABBLING_NODE : position reached");
                     _robot_controller_ready = true;
 
                     _stop_tracking();
 
                     // Update object hypothesis
-                    ip::SupervoxelSet current_supervoxels = _extract_supervoxels();
-                    _objects_hypotheses[_hypothesis_id].set_current(current_supervoxels, _tracked_transformation);
+                    ip::SurfaceOfInterest current_surface = _extract_surface(_saliency_modality, _modality);
+                    _objects_hypotheses[_hypothesis_id].set_current(current_surface, _tracked_transformation);
 
                     _result_ptcl = _objects_hypotheses[_hypothesis_id].get_current_cloud();
                     _got_result = true;
@@ -310,11 +347,13 @@ public:
         publish_feedback();
     }
 
-    bool is_finish(){
+    bool is_finish()
+    {
         return _counter_iter>=_nb_iter;
     }
 
-    void publish_feedback() {
+    void publish_feedback()
+    {
         if (!(_target_center[0] == 0 || _target_center[1] == 0 || _target_center[2] == 0)) {
             ip::PointCloudXYZ point_target;
             point_target.push_back(pcl::PointXYZ(_target_center[0], _target_center[1], _target_center[2]));
@@ -330,6 +369,16 @@ public:
             pcl::toROSMsg(*_workspace_ptcl, workspace_ptcl_msg);
             workspace_ptcl_msg.header = _images_sub->get_depth().header;
             _ptcl_pub->publish(workspace_ptcl_msg);
+
+            sensor_msgs::PointCloud2 saliency_ptcl_msg;
+            pcl::toROSMsg(*_saliency_ptcl, saliency_ptcl_msg);
+            saliency_ptcl_msg.header = _images_sub->get_depth().header;
+            _saliency_ptcl_pub->publish(saliency_ptcl_msg);
+
+            sensor_msgs::PointCloud2 object_saliency_ptcl_msg;
+            pcl::toROSMsg(*_object_saliency_ptcl, object_saliency_ptcl_msg);
+            object_saliency_ptcl_msg.header = _images_sub->get_depth().header;
+            _object_saliency_ptcl_pub->publish(object_saliency_ptcl_msg);
 
             // for all object hyp
         }
@@ -367,6 +416,7 @@ private:
 
     std::unique_ptr<Publisher> _ptcl_pub;
     std::unique_ptr<Publisher> _saliency_ptcl_pub;
+    std::unique_ptr<Publisher> _object_saliency_ptcl_pub;
 
     std::unique_ptr<Publisher> _target_ptcl_pub;
     std::unique_ptr<Publisher> _tracked_ptcl_pub;
@@ -384,18 +434,20 @@ private:
     std::string _classifier_path;
     iagmm::TrainingData _saliency_dataset;
     iagmm::NNMap _saliency_classifier;
-    ip::SaliencyMap _saliency_weights;
+    std::string _saliency_modality;
+    ip::saliency_map_t _saliency_weights;
 
     // Objects
-    ip::SupervoxelSet _supervoxels;
+    ip::SurfaceOfInterest _surface;
     std::vector<ObjectHyp> _objects_hypotheses;
-    std::map<size_t, ip::SaliencyMap> _weights;
+    std::string _modality;
+    std::map<size_t, ip::saliency_map_t> _weights;
     size_t _hypothesis_id;
 
     // Feedback clouds
     ip::PointCloudT::Ptr _workspace_ptcl;
     ip::PointCloudT::Ptr _saliency_ptcl;
-    std::vector<ip::PointCloudT::Ptr> _objects_ptcl;
+    ip::PointCloudT::Ptr _object_saliency_ptcl;
 
     // Tracking
     std::unique_ptr<Subscriber> _tracking_sub;
@@ -421,40 +473,7 @@ private:
     int _counter_iter;
     int _nb_iter;
 
-    Eigen::VectorXd _features_extractor(pcl::Supervoxel<ip::PointT>::Ptr supervoxel)
-    {
-        VectorXd features(6);
-
-        float hsv[3];
-        ip::tools::rgb2hsv(supervoxel->centroid_.r,
-                           supervoxel->centroid_.g,
-                           supervoxel->centroid_.b,
-                           hsv[0], hsv[1], hsv[2]);
-
-        features << hsv[0],
-                    hsv[1],
-                    hsv[2],
-                    supervoxel->normal_.normal[0],
-                    supervoxel->normal_.normal[1],
-                    supervoxel->normal_.normal[2];
-
-
-        return features;
-    }
-
-    Eigen::VectorXd _normal_features_extractor(pcl::Supervoxel<ip::PointT>::Ptr supervoxel)
-    {
-        VectorXd features(3);
-
-        features << supervoxel->normal_.normal[0],
-                    supervoxel->normal_.normal[1],
-                    supervoxel->normal_.normal[2];
-
-
-        return features;
-    }
-
-    ip::SupervoxelSet _extract_supervoxels()
+    ip::SurfaceOfInterest _extract_surface(const std::string& saliency_modality, const std::string& modality)
     {
         ROS_INFO_STREAM("BABBLING_NODE : extracting supervoxels");
 
@@ -485,94 +504,121 @@ private:
             throw std::runtime_error("BABBLING_NODE : empty filtered cloud");
         }
 
-        ip::SupervoxelSet supervoxels;
-        supervoxels.clear();
-        supervoxels.setInputCloud(_workspace_ptcl);
-        ROS_INFO_STREAM("BABBLING_NODE : compute supervoxels");
-        if(!supervoxels.computeSupervoxel()) {
+        ip::SurfaceOfInterest surface;
+        surface.clear();
+        surface.setInputCloud(_workspace_ptcl);
+        if(!surface.computeSupervoxel()) {
             ROS_ERROR_STREAM("BABBLING_NODE : error computing supervoxels");
             throw std::runtime_error("BABBLING_NODE : error computing supervoxels");
         }
 
-        _clouds_ready = true;
+        surface.compute_feature(saliency_modality);
+        surface.compute_feature(modality);
 
-        return supervoxels;
+        return surface;
     }
 
-    std::map<size_t, ip::SaliencyMap> _compute_weights(ip::SupervoxelSet& supervoxels,
-                                                       std::vector<ObjectHyp>& objects_hypotheses)
+    std::map<size_t, ip::saliency_map_t> _compute_object_weights(ip::SurfaceOfInterest& surface,
+                                                            std::vector<ObjectHyp>& objects_hypotheses)
     {
-        ROS_INFO_STREAM("BABBLING_NODE : computing weights");
+        ROS_INFO_STREAM("BABBLING_NODE : computing objects' saliency maps");
 
-        std::map<size_t, ip::SaliencyMap> weights;
+        std::map<size_t, ip::saliency_map_t> weights;
+
         for (size_t i = 0; i < objects_hypotheses.size(); i++)
         {
-            weights[i] = objects_hypotheses[i].get_saliency_map(supervoxels);
+            Classifier classifier = objects_hypotheses[i].get_classifier();
+            std::string modality = objects_hypotheses[i].get_modality();
+            weights[i] = surface.compute_saliency_map<Classifier>(modality, classifier);
         }
 
         return weights;
     }
 
-    ip::SaliencyMap _compute_saliency_map(ip::SupervoxelSet& supervoxels,
-                                          SaliencyClassifier classifier,
-                                          ip::features_extractor_t features_extractor)
+
+
+    ObjectHyp _new_hypothesis(ip::SurfaceOfInterest& surface,
+                              const std::string& saliency_modality,
+                              const std::string& modality)
     {
-        ROS_INFO_STREAM("BABBLING_NODE : computing saliency map");
+        ROS_INFO_STREAM("BABBLING_NODE : creating new object hypothesis");
 
-        ip::SaliencyMap map;
-
-        ip::SupervoxelArray svs = supervoxels.getSupervoxels();
-        for (const auto& sv : svs)
-        {
-          Eigen::VectorXd features = features_extractor(sv.second);
-          map[sv.first] = classifier.compute_estimation(features, 1);
+        std::vector<std::vector<uint32_t>> regions = surface.extract_regions(saliency_modality, 0.5);
+        if (regions.size() == 0 ) {
+            ROS_ERROR_STREAM("BABBLING_NODE : no region detected");
+            throw std::runtime_error("BABBLING_NODE : no region detected");
         }
 
-        return map;
+        std::vector<uint32_t> positive_labels = regions[0];
+        for (const auto& region : regions)
+        {
+            if (region.size() > positive_labels.size()) {
+                positive_labels = region;
+            }
+        }
+        std::vector<uint32_t> negative_labels = surface.extract_background(saliency_modality, 0.5);
+
+        Eigen::VectorXd feature = surface.get_feature(positive_labels[0], modality);
+        Classifier classifier(feature.size(), 2);
+
+        for (const auto& label : positive_labels)
+        {
+            Eigen::VectorXd feature = surface.get_feature(label, modality);
+            classifier.append(feature, 1);
+        }
+
+        for (const auto& label : negative_labels)
+        {
+            Eigen::VectorXd feature = surface.get_feature(label, modality);
+            classifier.append(feature, 0);
+        }
+
+        ObjectHyp hyp(classifier, modality);
+        return hyp;
     }
 
     size_t _choose_hypothesis(ip::SupervoxelSet& supervoxels,
-                              std::vector<ObjectHyp>& objects_hypotheses,
-                              std::map<size_t, ip::SaliencyMap>& weights)
+                              std::vector<ObjectHyp>& objects_hypotheses)
     {
         ROS_INFO_STREAM("BABBLING_NODE : choosing object hypothesis");
 
-        if (objects_hypotheses.size() == 0) {
-            Classifier new_classifier(6, 2);
-            ObjectHyp new_hypothesis(new_classifier, boost::bind(&Babbling::_features_extractor, this, _1));
-            objects_hypotheses.push_back(new_hypothesis);
-
-            return 0;
-        }
-        else {
-            // @TODO randomly generate new objects hypothesis (cf Chinese restaurant process)
-
-            return 0;
-        }
+        return 0;
     }
 
-    uint32_t _choose_target(ip::SaliencyMap& saliency_map, ip::SaliencyMap& object_map)
+    uint32_t _choose_target(ip::saliency_map_t& map)
     {
         ROS_INFO_STREAM("BABBLING_NODE : choosing target");
 
-        Vector4d target_center;
+        // std::vector<uint32_t> candidates;
+        // for (const auto& e : map)
+        // {
+        //     if (e.second > 0.5) {
+        //         candidates.push_back(e.first);
+        //     }
+        // }
+        //
+        // if (candidates.size() == 0) {
+        //     ROS_ERROR_STREAM("BABBLING_NODE : no candidates for target");
+        //     return 0;
+        // }
+        // else {
+        //     int i = rand() % candidates.size();
+        //     return candidates[i];
+        // }
 
-        std::vector<uint32_t> candidates;
-        for (const auto& e : saliency_map)
+        uint32_t max_label = 0;
+        double max_weight = 0;
+
+        for (const auto& e : map)
         {
-            if (e.second > 0.5 || object_map[e.first] > 0.5) {
-                candidates.push_back(e.first);
+            if (e.second > max_weight) {
+                max_label = e.first;
+                max_weight = e.second;
             }
         }
 
-        if (candidates.size() == 0) {
-            ROS_ERROR_STREAM("BABBLING_NODE : no candidates for target");
-            return 0;
-        }
-        else {
-            int i = rand() % candidates.size();
-            return candidates[i];
-        }
+        ROS_INFO_STREAM("BABBLING_NODE : target has weight " << max_weight);
+        return max_label;
     }
 
     void _start_tracking()

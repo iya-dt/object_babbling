@@ -28,6 +28,7 @@ motion_detector_service: "/object_babbling/motion_detector_node/is_moving"
 
 workspace_ptcl: "/object_babbling/babbling_node/workspace_ptcl"
 saliency_ptcl: "/object_babbling/babbling_node/saliency_ptcl"
+object_saliency_ptcl: "/object_babbling/babbling_node/object_saliency_ptcl"
 objects_saliency_ptcl_prefix: "/object_babbling/babbling_node/"
 
 target_ptcl: "/object_babbling/babbling_node/target_ptcl"
