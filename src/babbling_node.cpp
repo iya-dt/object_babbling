@@ -26,7 +26,7 @@
 #include <pcl/tracking/particle_filter_omp.h>
 #include <pcl/tracking/coherence.h>
 #include <pcl/tracking/distance_coherence.h>
-// #include <pcl/tracking/hsv_color_coherence.h>
+#include <pcl/tracking/hsv_color_coherence.h>
 // #include <pcl/tracking/normal_coherence.h>
 #include <pcl/tracking/approx_nearest_pair_point_cloud_coherence.h>
 #include <pcl/tracking/nearest_pair_point_cloud_coherence.h>
@@ -45,7 +45,7 @@
 #include <image_processing/SupervoxelSet.h>
 #include <image_processing/SurfaceOfInterest.h>
 #include <image_processing/DescriptorExtraction.h>
-#include <image_processing/Objects.h>
+#include <image_processing/Object.h>
 
 #include <cafer_core/cafer_core.hpp>
 
@@ -191,6 +191,7 @@ public:
         _db_init = false;
         _db_ready = true;
         _recording = false;
+        _create_new_hypothesis = true;
         _clouds_ready = false;
         _got_result = false;
 
@@ -239,19 +240,17 @@ public:
 
         if (_db_init) {
             if (_db_ready && !_recording) {
-                ROS_WARN_STREAM("BABBLING_NODE : begin iteration");
-
+                ROS_WARN_STREAM("BABBLING_NODE : BEGIN ITERATION " << _counter_iter
+                                << " (" << _objects_hypotheses.size() << " hypotheses availables)");
                 // Initialize the iteration
                 _surface = _extract_surface(_saliency_modality, _modality);
 
                 _surface.init_weights(_saliency_modality, 0.5);
                 _surface.compute_weights<SaliencyClassifier>(_saliency_modality, _saliency_classifier);
 
-                // Select object hypothesis
-                if (_objects_hypotheses.size() != 0) {
-                    _hypothesis_id = _choose_hypothesis(_surface, _objects_hypotheses);
-                }
-                else {
+                if (_create_new_hypothesis) {
+                    ROS_WARN_STREAM("BABBLING_NODE : creating new hypothesis");
+
                     ObjectHyp new_hyp = _new_hypothesis(
                         _surface,
                         _saliency_modality,
@@ -260,19 +259,22 @@ public:
                     _objects_hypotheses.push_back(new_hyp);
 
                     _hypothesis_id = _objects_hypotheses.size() - 1;
+
+                    _create_new_hypothesis = false;
+                }
+                else {
+                    int nb_s = _objects_hypotheses[_hypothesis_id].get_classifier().dataset_size();
+                    ROS_WARN_STREAM("BABBLING_NODE : improving hypothesis " << _hypothesis_id
+                                    << " (" << nb_s <<" samples availables)");
+
                 }
 
-                ROS_INFO_STREAM("BABBLING_NODE : " << _objects_hypotheses.size() << " hypothesis availables");
-                int nb_s = _objects_hypotheses[_hypothesis_id].get_classifier().number_of_samples();
-                ROS_INFO_STREAM("BABBLING_NODE : " << nb_s << " samples in hypothesis " << _hypothesis_id);
-
                 // Feedback information
-                // _saliency_weights = _surface.get_weights()[_saliency_modality];
+                _saliency_weights = _surface.get_weights()[_saliency_modality];
                 _weights = _compute_object_weights(
                     _surface,
                     _objects_hypotheses
                 );
-
 
                 _saliency_ptcl = _surface.getColoredWeightedCloud(_saliency_modality).makeShared();
                 _object_saliency_ptcl = _surface.getColoredWeightedCloud(_weights[_hypothesis_id]).makeShared();
@@ -289,6 +291,11 @@ public:
                 _target_ptcl = _objects_hypotheses[_hypothesis_id].get_initial_cloud();
                 ROS_INFO_STREAM("BABBLING_NODE : target cloud size " << _target_ptcl->size());
                 pcl::compute3DCentroid<ip::PointT>(*_target_ptcl, _target_center);
+
+                if (_target_ptcl->size() == 0){
+                    ROS_ERROR_STREAM("BABBLING_NODE : empty target cloud :(");
+                    throw std::runtime_error("BABBLING_NODE : empty target cloud :(");
+                }
 
                 // Choosing an action
                 Vector4d target_center_robot;
@@ -399,10 +406,10 @@ public:
         }
 
         if (_got_result) {
-          sensor_msgs::PointCloud2 result_ptcl_msg;
-          pcl::toROSMsg(*_result_ptcl, result_ptcl_msg);
-          result_ptcl_msg.header = _images_sub->get_depth().header;
-          _result_ptcl_pub->publish(result_ptcl_msg);
+            sensor_msgs::PointCloud2 result_ptcl_msg;
+            pcl::toROSMsg(*_result_ptcl, result_ptcl_msg);
+            result_ptcl_msg.header = _images_sub->get_depth().header;
+            _result_ptcl_pub->publish(result_ptcl_msg);
         }
     }
 
@@ -467,6 +474,7 @@ private:
     bool _db_ready;
     bool _db_init;
     bool _recording;
+    bool _create_new_hypothesis;
     bool _clouds_ready;
     bool _got_result;
 
@@ -549,31 +557,25 @@ private:
             throw std::runtime_error("BABBLING_NODE : no region detected");
         }
 
-        std::vector<uint32_t> positive_labels = regions[0];
+        // Select region
+        std::vector<uint32_t> max_region = regions[0];
         for (const auto& region : regions)
         {
-            if (region.size() > positive_labels.size()) {
-                positive_labels = region;
+            if (region.size() > max_region.size()) {
+                max_region = region;
             }
         }
-        std::vector<uint32_t> negative_labels = surface.extract_background(saliency_modality, 0.5);
 
-        Eigen::VectorXd feature = surface.get_feature(positive_labels[0], modality);
-        Classifier classifier(feature.size(), 2);
+        // Init classifier
+        int n_feat = surface.get_feature(max_region[0], modality).size();
+        Classifier classifier(n_feat,2);
 
-        for (const auto& label : positive_labels)
-        {
-            Eigen::VectorXd feature = surface.get_feature(label, modality);
-            classifier.append(feature, 1);
-        }
+        // Compute center
+        Eigen::Vector4d center;
+        pcl::compute3DCentroid(surface.get_cloud(max_region), center);
+        ROS_INFO_STREAM("BABBLING_NODE : object center " << center);
 
-        for (const auto& label : negative_labels)
-        {
-            Eigen::VectorXd feature = surface.get_feature(label, modality);
-            classifier.append(feature, 0);
-        }
-
-        ObjectHyp hyp(classifier, modality);
+        ObjectHyp hyp(classifier, saliency_modality, modality, center);
         return hyp;
     }
 
@@ -617,7 +619,6 @@ private:
             }
         }
 
-        ROS_INFO_STREAM("BABBLING_NODE : target has weight " << max_weight);
         return max_label;
     }
 
@@ -676,9 +677,9 @@ private:
           = boost::shared_ptr<DistanceCoherence<ip::PointT> >(new DistanceCoherence<ip::PointT>());
         coherence->addPointCoherence(distance_coherence);
 
-        // boost::shared_ptr<HSVColorCoherence<ip::PointT> > color_coherence
-        //   = boost::shared_ptr<HSVColorCoherence<ip::PointT> >(new HSVColorCoherence<ip::PointT>());
-        // coherence->addPointCoherence(color_coherence);
+        boost::shared_ptr<HSVColorCoherence<ip::PointT> > color_coherence
+          = boost::shared_ptr<HSVColorCoherence<ip::PointT> >(new HSVColorCoherence<ip::PointT>());
+        coherence->addPointCoherence(color_coherence);
 
         // boost::shared_ptr<NormalCoherence<ip::PointT> > normal_coherence
         //   = boost::shared_ptr<NormalCoherence<ip::PointT> >(new NormalCoherence<ip::PointT>());

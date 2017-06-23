@@ -1,4 +1,4 @@
-planner_id: "PRMstarkConfigDefault"
+planner_id: "RRTConnectkConfigDefault"
 planning_attempts: "5"
 planning_time: "5"
 tolerance_pose: "0.01"

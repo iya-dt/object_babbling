@@ -8,6 +8,7 @@
 
 #include <object_babbling/pose_goalAction.h>
 #include <actionlib/server/simple_action_server.h>
+#include <tf/transform_datatypes.h>
 
 #include <ros/callback_queue.h>
 #include <fstream>
@@ -73,6 +74,13 @@ public:
 
         _crustcrawler_mover->group->setPlannerId(static_cast<std::string>(_crustcrawler_mover->global_parameters.get_planner_parameters()["planner_id"]));
         _crustcrawler_mover->group->setPlanningTime(std::stod(_crustcrawler_mover->global_parameters.get_planner_parameters()["planning_time"]));
+
+        // geometry_msgs::PoseStamped pose = _crustcrawler_mover->group->getPoseTarget();
+        // ROS_WARN_STREAM("CONTROLLER_NODE : " << pose.pose.position.x << " "
+        //                                      << pose.pose.position.y << " "
+        //                                      << pose.pose.position.z << " "
+        //                                    );
+
         _crustcrawler_mover->group->setJointValueTarget(_home_variable_values);
         if(_crustcrawler_mover->group->plan(_group_plan))
             _crustcrawler_mover->group->execute(_group_plan);
@@ -115,43 +123,70 @@ public:
         if(largest_difference(arm_joint_values_,
                               home_values_) > 0.2){
             _crustcrawler_mover->group->setJointValueTarget(_home_variable_values);
-            if(_crustcrawler_mover->group->plan(_group_plan))
+            if(_crustcrawler_mover->group->plan(_group_plan)){
                 _crustcrawler_mover->group->execute(_group_plan);
+            }
         }
 
-        /* close the gripper and move to point with 15cm height above the goal*/
+        /* close the gripper */
         _gripper_command.args = "{position: 0.0}";
         _gripper_command.command = "go";
         _gripper_command_publisher->publish(_gripper_command);
 
-        _crustcrawler_mover->group->setPositionTarget(poseGoal->target_pose[0], poseGoal->target_pose[1], poseGoal->target_pose[2] + 0.15);
+        /* get closer */
+        ROS_INFO_STREAM("CONTROLLER_NODE : getting closer");
+        _crustcrawler_mover->group->setPositionTarget(poseGoal->target_pose[0], poseGoal->target_pose[1], poseGoal->target_pose[2]);
         if(_crustcrawler_mover->group->plan(_group_plan))
             _crustcrawler_mover->group->execute(_group_plan);
 
-        /*Then touch the object*/
-        _crustcrawler_mover->group->setPositionTarget(poseGoal->target_pose[0], poseGoal->target_pose[1], poseGoal->target_pose[2]);
-        if(_crustcrawler_mover->group->plan(_group_plan)){
-            ROS_INFO_STREAM("CONTROLLER : There is a valid plan lets move");
-            if(_crustcrawler_mover->group->execute(_group_plan)){
-                if((fabs(_crustcrawler_mover->global_parameters.get_eef_pose().position.x - poseGoal->target_pose[0]) < 0.013) &&
-                        (fabs(_crustcrawler_mover->global_parameters.get_eef_pose().position.y - poseGoal->target_pose[1]) < 0.013) &&
-                        (fabs(_crustcrawler_mover->global_parameters.get_eef_pose().position.z - poseGoal->target_pose[2]) < 0.013))
-                    _touch_object_success = true;
-                else{
-                    ROS_WARN_STREAM("CONTROLLER : Difference in x coordinate is: "
-                                    << fabs(_crustcrawler_mover->global_parameters.get_eef_pose().position.x - poseGoal->target_pose[0])
-                            << " in y is: "
-                            << fabs(_crustcrawler_mover->global_parameters.get_eef_pose().position.y - poseGoal->target_pose[1])
-                            << " and in z is: " << fabs(_crustcrawler_mover->global_parameters.get_eef_pose().position.z - poseGoal->target_pose[2]));
-                    _touch_object_success = false;
-                }
-            }
+        // geometry_msgs::Pose first_pose;
+        // first_pose.position.x = poseGoal->target_pose[0];
+        // first_pose.position.y = poseGoal->target_pose[1];
+        // first_pose.position.z = poseGoal->target_pose[2];
+        // // first_pose.orientation.x = 0.99;
+        // // first_pose.orientation.y = 0.00;
+        // // first_pose.orientation.z = -0.06;
+        // // first_pose.orientation.w = -0.004;
+        // first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, M_PI, 0.0);
+        //
+        // _crustcrawler_mover->group->setPoseTarget(first_pose);
+        // if(_crustcrawler_mover->group->plan(_group_plan))
+        //     _crustcrawler_mover->group->execute(_group_plan);
+        //
+        // /* touch the object */
+        // ROS_INFO_STREAM("CONTROLLER_NODE : touching");
+        // geometry_msgs::Pose final_pose;
+        // final_pose.position.x = poseGoal->target_pose[0];
+        // final_pose.position.y = poseGoal->target_pose[1];
+        // final_pose.position.z = poseGoal->target_pose[2];
+        // // final_pose.orientation.x = 0.99;
+        // // final_pose.orientation.y = 0.00;
+        // // final_pose.orientation.z = -0.06;
+        // // final_pose.orientation.w = -0.004;
+        // final_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, M_PI, 0.0);
+        //
+        // std::vector<geometry_msgs::Pose> waypoints;
+        // moveit_msgs::RobotTrajectory pushing_trajectory;
+        //
+        // waypoints.push_back(first_pose);
+        // waypoints.push_back(final_pose);
+        //
+        // _crustcrawler_mover->group->computeCartesianPath(waypoints, 0.01, 0.0, pushing_trajectory, false);
+        //
+        // // Finally plan and execute the trajectory
+        // moveit::planning_interface::MoveGroup::Plan touch_plan;
+        // touch_plan.trajectory_ = pushing_trajectory;
+        // _crustcrawler_mover->group->execute(touch_plan);
+        _touch_object_success = true;
 
-        }
-        else{
-            ROS_WARN_STREAM("CONTROLLER : Failed to find any plans :( :( :( ");
-            _touch_object_success = false;
-        }
+        // if(_crustcrawler_mover->group->computeCartesianPath(waypoints, 0.025, 0.0, pushing_trajectory)){
+        //     _crustcrawler_mover->group->execute(pushing_trajectory);
+        //     _touch_object_success = true;
+        // }
+        // else{
+        //     ROS_WARN_STREAM("CONTROLLER : Failed to find any plans");
+        //     _touch_object_success = false;
+        // }
 
         _crustcrawler_mover->group->setJointValueTarget(_home_variable_values);
         if(_crustcrawler_mover->group->plan(_group_plan))
