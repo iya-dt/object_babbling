@@ -1,28 +1,28 @@
-//
-// Created by phlf on 24/03/16.
-//
 #include <iostream>
 #include <string>
-#include <boost/timer.hpp>
-#include <cafer_core/cafer_core.hpp>
-
-#include <object_babbling/pose_goalAction.h>
-#include <actionlib/server/simple_action_server.h>
-#include <tf/transform_datatypes.h>
-
-#include <ros/callback_queue.h>
+#include <random>
 #include <fstream>
 #include <cmath>
+
+#include <boost/timer.hpp>
+#include <boost/timer.hpp>
+
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 #include <Eigen/Dense>
-#include <boost/timer.hpp>
 
+#include <actionlib/server/simple_action_server.h>
+#include <tf/transform_datatypes.h>
+#include <ros/callback_queue.h>
 #include <moveit/robot_state/conversions.h>
-
 #include <crustcrawler_mover_utils/crustcrawler_mover.hpp>
 #include <crustcrawler_mover_utils/move_crustcrawler_arm.h>
 #include <crustcrawler_core_msgs/EndEffectorCommand.h>
+
+#include <cafer_core/cafer_core.hpp>
+
+#include "object_babbling/pose_goalAction.h"
+
 
 using namespace object_babbling;
 using namespace cafer_core;
@@ -61,13 +61,15 @@ public:
         _is_init = true;
 
         _home_variable_values.insert ( std::pair<std::string, double>("joint_1", -1.3) );
-        _home_variable_values.insert ( std::pair<std::string, double>("joint_2",  0.3) );
+        _home_variable_values.insert ( std::pair<std::string, double>("joint_2",  -0.3) );
         _home_variable_values.insert ( std::pair<std::string, double>("joint_3", -1.1) );
         _home_variable_values.insert ( std::pair<std::string, double>("joint_4",  0.0) );
         _home_variable_values.insert ( std::pair<std::string, double>("joint_5", -0.5) );
         _home_variable_values.insert ( std::pair<std::string, double>("joint_6",  0.0) );
 
-        home_values_ = {-1.3, 0.3, -1.1, 0.0, -0.5, 0.0};
+        home_values_ = {-1.3, -0.3, -1.1, 0.0, -0.5, 0.0};
+
+        _uniform = std::uniform_real_distribution<double>(M_PI/4, 3*M_PI/4);
 
         ros::AsyncSpinner my_spinner(4);
         my_spinner.start();
@@ -118,7 +120,7 @@ public:
 
     void execute(const pose_goalGoalConstPtr& poseGoal)
     {
-        /*make sure you are at home position*/
+        /* make sure you are at home position */
         extract_arm_joints_values();
         if(largest_difference(arm_joint_values_,
                               home_values_) > 0.2){
@@ -128,76 +130,87 @@ public:
             }
         }
 
+        double signe = 0.0;
+        if (poseGoal->target_pose[1] > 0) {
+            signe = -1.0;
+        }
+        else {
+            signe = +1.0;
+        }
+
+        double theta = _uniform(_re);
+
         /* close the gripper */
         _gripper_command.args = "{position: 0.0}";
         _gripper_command.command = "go";
         _gripper_command_publisher->publish(_gripper_command);
 
-        /* get closer */
-        ROS_INFO_STREAM("CONTROLLER_NODE : getting closer");
-        _crustcrawler_mover->group->setPositionTarget(poseGoal->target_pose[0], poseGoal->target_pose[1], poseGoal->target_pose[2]);
-        if(_crustcrawler_mover->group->plan(_group_plan))
-            _crustcrawler_mover->group->execute(_group_plan);
+        /* first trajectory */
+        ROS_INFO_STREAM("CONTROLLER_NODE : first trajectory");
 
-        // geometry_msgs::Pose first_pose;
-        // first_pose.position.x = poseGoal->target_pose[0];
-        // first_pose.position.y = poseGoal->target_pose[1];
-        // first_pose.position.z = poseGoal->target_pose[2];
-        // // first_pose.orientation.x = 0.99;
-        // // first_pose.orientation.y = 0.00;
-        // // first_pose.orientation.z = -0.06;
-        // // first_pose.orientation.w = -0.004;
-        // first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, M_PI, 0.0);
-        //
-        // _crustcrawler_mover->group->setPoseTarget(first_pose);
-        // if(_crustcrawler_mover->group->plan(_group_plan))
-        //     _crustcrawler_mover->group->execute(_group_plan);
-        //
-        // /* touch the object */
-        // ROS_INFO_STREAM("CONTROLLER_NODE : touching");
-        // geometry_msgs::Pose final_pose;
-        // final_pose.position.x = poseGoal->target_pose[0];
-        // final_pose.position.y = poseGoal->target_pose[1];
-        // final_pose.position.z = poseGoal->target_pose[2];
-        // // final_pose.orientation.x = 0.99;
-        // // final_pose.orientation.y = 0.00;
-        // // final_pose.orientation.z = -0.06;
-        // // final_pose.orientation.w = -0.004;
-        // final_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, M_PI, 0.0);
-        //
-        // std::vector<geometry_msgs::Pose> waypoints;
-        // moveit_msgs::RobotTrajectory pushing_trajectory;
-        //
-        // waypoints.push_back(first_pose);
-        // waypoints.push_back(final_pose);
-        //
-        // _crustcrawler_mover->group->computeCartesianPath(waypoints, 0.01, 0.0, pushing_trajectory, false);
-        //
-        // // Finally plan and execute the trajectory
-        // moveit::planning_interface::MoveGroup::Plan touch_plan;
-        // touch_plan.trajectory_ = pushing_trajectory;
-        // _crustcrawler_mover->group->execute(touch_plan);
+        geometry_msgs::Pose first_pose;
+
+        bool got_plan = false;
+        int n = 0;
+        do {
+            first_pose.position.x = poseGoal->target_pose[0] - signe*cos(theta)*0.1;
+            first_pose.position.y = poseGoal->target_pose[1] - signe*sin(theta)*0.1;
+            first_pose.position.z = poseGoal->target_pose[2] + 0.1;
+            first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 3*M_PI/2 - 0.1*n, 0.0);
+
+            _crustcrawler_mover->group->setPoseTarget(first_pose);
+            got_plan = _crustcrawler_mover->group->plan(_group_plan);
+
+            n += 1;
+        } while (!got_plan && n < 30);
+
+        /* execute the trajectory */
+        _crustcrawler_mover->group->execute(_group_plan);
+
+
+        /* second trajectory */
+        ROS_INFO_STREAM("CONTROLLER_NODE : second trajectory");
+
+        geometry_msgs::Pose final_pose;
+        moveit_msgs::RobotTrajectory pushing_trajectory;
+
+        double f = 0.0;
+        n = 0;
+        while (f < 1.0 && n < 300) {
+            first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 3*M_PI/2 - 0.01*n, 0.0);
+
+            final_pose.position.x = poseGoal->target_pose[0] + signe*cos(theta)*0.1;
+            final_pose.position.y = poseGoal->target_pose[1] + signe*sin(theta)*0.1;
+            final_pose.position.z = poseGoal->target_pose[2] + 0.1;
+            first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 3*M_PI/2 - 0.01*n, 0.0);
+
+            std::vector<geometry_msgs::Pose> waypoints;
+
+            waypoints.push_back(first_pose);
+            waypoints.push_back(final_pose);
+
+            f = _crustcrawler_mover->group->computeCartesianPath(waypoints, 0.025, 0.0, pushing_trajectory, false);
+            n += 1;
+        }
+
+        /* execute the trajectory */
+        moveit::planning_interface::MoveGroup::Plan touch_plan;
+        touch_plan.trajectory_ = pushing_trajectory;
+        _crustcrawler_mover->group->execute(touch_plan);
         _touch_object_success = true;
 
-        // if(_crustcrawler_mover->group->computeCartesianPath(waypoints, 0.025, 0.0, pushing_trajectory)){
-        //     _crustcrawler_mover->group->execute(pushing_trajectory);
-        //     _touch_object_success = true;
-        // }
-        // else{
-        //     ROS_WARN_STREAM("CONTROLLER : Failed to find any plans");
-        //     _touch_object_success = false;
-        // }
 
+        /* return to home position */
         _crustcrawler_mover->group->setJointValueTarget(_home_variable_values);
         if(_crustcrawler_mover->group->plan(_group_plan))
             _crustcrawler_mover->group->execute(_group_plan);
 
         if(_touch_object_success){
-            ROS_INFO_STREAM("CONTROLLER : The motion was successful !!");
+            ROS_INFO_STREAM("CONTROLLER_NODE : The motion was successful !!");
             _serv->setSucceeded();
         }
         else{
-            ROS_WARN_STREAM("CONTROLLER : Something went wrong");
+            ROS_WARN_STREAM("CONTROLLER_NODE : Something went wrong");
             _serv->setAborted();
         }
 
@@ -225,6 +238,9 @@ private:
     crustcrawler_core_msgs::EndEffectorCommand _gripper_command;
     bool _touch_object_success = false;
     std::vector<double> arm_joint_values_, home_values_;
+
+    std::uniform_real_distribution<double> _uniform;
+    std::default_random_engine _re;
 };
 
 std::string parse_arg(int& argc, char **& argv, const std::string& default_val)
@@ -266,7 +282,7 @@ int main(int argc, char** argv){
     controller.wait_for_init();
     controller.spin();
 
-    ROS_INFO_STREAM("CONTROLLER : Robot controller ready !");
+    ROS_INFO_STREAM("CONTROLLER_NODE : Robot controller ready !");
 
     while (ros::ok() && (!controller.get_terminate())) {
         controller.spin();

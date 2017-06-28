@@ -20,12 +20,16 @@ public:
         auto type = static_cast<cc::DatabaseManager::Response>(status_msg->type);
         switch(type){
         case cc::DatabaseManager::Response::STATUS_READY :
+            if (!db_done_recording) {
+                ROS_INFO_STREAM("SUPERVISOR : DBManager is waiting");
+            }
             db_done_recording = true;
-            ROS_INFO_STREAM("SUPERVISOR : DBManager is waiting");
             break;
         case cc::DatabaseManager::Response::STATUS_ACTIVE :
+            if (db_done_recording) {
+                ROS_INFO_STREAM("SUPERVISOR : DBManager is recording");
+            }
             db_done_recording = false;
-            ROS_INFO_STREAM("SUPERVISOR : DBManager is recording");
             break;
         case cc::DatabaseManager::Response::ERROR :
             break;
@@ -63,7 +67,7 @@ public:
 
         }
 
-        ROS_INFO_STREAM("Supervisor id : " << _descriptor.id);
+        // ROS_INFO_STREAM("Supervisor id : " << _descriptor.id);
         cc::DBManager db_request;
         db_request.id = _descriptor.id;
         db_request.type = static_cast<uint8_t>(cc::DatabaseManager::Request::ASK_STATUS);

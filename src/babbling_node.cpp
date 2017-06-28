@@ -187,13 +187,15 @@ public:
 
         _target_center << 0.0, 0.0, 0.0, 0.0;
         _tracked_center << 0.0, 0.0, 0.0, 0.0;
+        _tracked_ptcl = ip::PointCloudT::Ptr(new ip::PointCloudT);
+
+        _result_ptcl = ip::PointCloudT::Ptr(new ip::PointCloudT);
 
         _db_init = false;
         _db_ready = true;
         _recording = false;
         _create_new_hypothesis = true;
         _clouds_ready = false;
-        _got_result = false;
 
         _counter_iter = 0;
     }
@@ -240,6 +242,17 @@ public:
 
         if (_db_init) {
             if (_db_ready && !_recording) {
+                ip::PointCloudXYZ point_tracked;
+                sensor_msgs::PointCloud2 point_tracked_msg;
+                pcl::toROSMsg(point_tracked, point_tracked_msg);
+                point_tracked_msg.header = _images_sub->get_depth().header;
+                _tracked_point_pub->publish(point_tracked_msg);
+
+                sensor_msgs::PointCloud2 tracked_ptcl_msg;
+                pcl::toROSMsg(*_tracked_ptcl, tracked_ptcl_msg);
+                tracked_ptcl_msg.header = _images_sub->get_depth().header;
+                _tracked_ptcl_pub->publish(tracked_ptcl_msg);
+
                 ROS_WARN_STREAM("BABBLING_NODE : BEGIN ITERATION " << _counter_iter
                                 << " (" << _objects_hypotheses.size() << " hypotheses availables)");
                 // Initialize the iteration
@@ -332,7 +345,6 @@ public:
                     _objects_hypotheses[_hypothesis_id].set_current(current_surface, _tracked_transformation);
 
                     _result_ptcl = _objects_hypotheses[_hypothesis_id].get_current_cloud();
-                    _got_result = true;
 
                     _stop_db_recording();
 
@@ -361,16 +373,23 @@ public:
 
     void publish_feedback()
     {
+        // target
+        ip::PointCloudXYZ point_target;
+        sensor_msgs::PointCloud2 point_target_msg;
         if (!(_target_center[0] == 0 || _target_center[1] == 0 || _target_center[2] == 0)) {
-            ip::PointCloudXYZ point_target;
             point_target.push_back(pcl::PointXYZ(_target_center[0], _target_center[1], _target_center[2]));
-            sensor_msgs::PointCloud2 point_target_msg;
-
-            pcl::toROSMsg(point_target, point_target_msg);
-            point_target_msg.header = _images_sub->get_depth().header;
-            _target_point_pub->publish(point_target_msg);
         }
+        pcl::toROSMsg(point_target, point_target_msg);
+        point_target_msg.header = _images_sub->get_depth().header;
+        _target_point_pub->publish(point_target_msg);
 
+        // tracking results
+        sensor_msgs::PointCloud2 result_ptcl_msg;
+        pcl::toROSMsg(*_result_ptcl, result_ptcl_msg);
+        result_ptcl_msg.header = _images_sub->get_depth().header;
+        _result_ptcl_pub->publish(result_ptcl_msg);
+
+        // feedback clouds
         if (_clouds_ready) {
             sensor_msgs::PointCloud2 workspace_ptcl_msg;
             pcl::toROSMsg(*_workspace_ptcl, workspace_ptcl_msg);
@@ -387,29 +406,7 @@ public:
             object_saliency_ptcl_msg.header = _images_sub->get_depth().header;
             _object_saliency_ptcl_pub->publish(object_saliency_ptcl_msg);
 
-            // for all object hyp
-        }
-
-        if (!(_tracked_center[0] == 0 || _tracked_center[1] == 0 || _tracked_center[2] == 0)) {
-            ip::PointCloudXYZ point_tracked;
-            point_tracked.push_back(pcl::PointXYZ(_tracked_center[0], _tracked_center[1], _tracked_center[2]));
-
-            sensor_msgs::PointCloud2 point_tracked_msg;
-            pcl::toROSMsg(point_tracked, point_tracked_msg);
-            point_tracked_msg.header = _images_sub->get_depth().header;
-            _tracked_point_pub->publish(point_tracked_msg);
-
-            sensor_msgs::PointCloud2 tracked_ptcl_msg;
-            pcl::toROSMsg(*_tracked_ptcl, tracked_ptcl_msg);
-            tracked_ptcl_msg.header = _images_sub->get_depth().header;
-            _tracked_ptcl_pub->publish(tracked_ptcl_msg);
-        }
-
-        if (_got_result) {
-            sensor_msgs::PointCloud2 result_ptcl_msg;
-            pcl::toROSMsg(*_result_ptcl, result_ptcl_msg);
-            result_ptcl_msg.header = _images_sub->get_depth().header;
-            _result_ptcl_pub->publish(result_ptcl_msg);
+            // for all object hyp ?
         }
     }
 
@@ -465,7 +462,7 @@ private:
     ip::PointCloudT::Ptr _result_ptcl;
     Eigen::Affine3f _tracked_transformation;
     int _track_count = 0;
-    double _downsampling_grid_size = 0.001;
+    double _downsampling_grid_size = 0.003;
     std::shared_ptr<KLDAdaptiveParticleFilterOMPTracker<ip::PointT, ParticleXYZRPY> > _tracker;
 
 
@@ -476,7 +473,6 @@ private:
     bool _recording;
     bool _create_new_hypothesis;
     bool _clouds_ready;
-    bool _got_result;
 
     int _counter_iter;
     int _nb_iter;
@@ -645,7 +641,7 @@ private:
         std::vector<double> initial_noise_covariance = std::vector<double>(6, 0.00001);
         std::vector<double> default_initial_mean = std::vector<double>(6, 0.0);
 
-        _tracker.reset(new KLDAdaptiveParticleFilterOMPTracker<ip::PointT, ParticleXYZRPY>(8));
+        _tracker.reset(new KLDAdaptiveParticleFilterOMPTracker<ip::PointT, ParticleXYZRPY>(16));
 
         ParticleXYZRPY bin_size;
         bin_size.x = 0.1f;
@@ -713,6 +709,9 @@ private:
         ROS_INFO_STREAM("BABBLING_NODE : stoping tracking");
         _tracking_sub.reset();
         _tracker.reset();
+
+        _tracked_center << 0.0, 0.0, 0.0, 0.0;
+        _tracked_ptcl = ip::PointCloudT::Ptr(new ip::PointCloudT);
     }
 
     void _image_processing_callback(const rgbd_motion_data::ConstPtr&  msg)
@@ -744,6 +743,20 @@ private:
         pcl::transformPointCloud<ip::PointT>(*(_tracker->getReferenceCloud()), *_tracked_ptcl, _tracked_transformation);
 
         pcl::compute3DCentroid<ip::PointT>(*_tracked_ptcl, _tracked_center);
+
+        // publish feedback
+        ip::PointCloudXYZ point_tracked;
+        point_tracked.push_back(pcl::PointXYZ(_tracked_center[0], _tracked_center[1], _tracked_center[2]));
+
+        sensor_msgs::PointCloud2 point_tracked_msg;
+        pcl::toROSMsg(point_tracked, point_tracked_msg);
+        point_tracked_msg.header = _images_sub->get_depth().header;
+        _tracked_point_pub->publish(point_tracked_msg);
+
+        sensor_msgs::PointCloud2 tracked_ptcl_msg;
+        pcl::toROSMsg(*_tracked_ptcl, tracked_ptcl_msg);
+        tracked_ptcl_msg.header = _images_sub->get_depth().header;
+        _tracked_ptcl_pub->publish(tracked_ptcl_msg);
     }
 
     void _start_db_recording()
@@ -859,7 +872,7 @@ private:
 
         YAML::Node fileNode = YAML::LoadFile(filename);
         if (fileNode.IsNull()) {
-            ROS_ERROR_STREAM("IMAGE_PROCESSING_NODE : could not load dataset at " << filename);
+            ROS_ERROR_STREAM("BABBLING_NODE : could not load dataset at " << filename);
             return dataset;
         }
 
@@ -894,17 +907,19 @@ int main(int argc, char** argv)
 
     babbling.wait_for_init();
 
+    ROS_INFO_STREAM("BABBLING_NODE : Babbling ready !");
+
     while (ros::ok() && (!babbling.get_terminate()) && !babbling.is_finish()) {
         babbling.spin();
         babbling.update();
         babbling.sleep();
     }
 
-    ROS_INFO_STREAM("BABBLING : ros::ok = " << ros::ok()
+    ROS_INFO_STREAM("BABBLING_NODE : ros::ok = " << ros::ok()
                     << " terminate = " << babbling.get_terminate()
                     << " is finish = " << babbling.is_finish());
 
-    ROS_INFO_STREAM("BABBLING : is finish");
+    ROS_INFO_STREAM("BABBLING_NODE : is finish");
 
     return 0;
 }
