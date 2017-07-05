@@ -15,9 +15,8 @@
 #include <tf/transform_datatypes.h>
 #include <ros/callback_queue.h>
 #include <moveit/robot_state/conversions.h>
-#include <crustcrawler_mover_utils/crustcrawler_mover.hpp>
-#include <crustcrawler_mover_utils/move_crustcrawler_arm.h>
-#include <crustcrawler_core_msgs/EndEffectorCommand.h>
+#include "baxter_mover_utils/baxter_mover_utils/baxter_mover.hpp"
+#include <baxter_mover_utils/move_baxter_arm.h>
 
 #include <cafer_core/cafer_core.hpp>
 
@@ -42,14 +41,12 @@ public:
         }
 
         ROS_INFO_STREAM("CONTROLLER : Global parameters retrieved:" << std::endl << display_params.str());
+        ROS_INFO_STREAM("CONTROLLER : node name space is: " << cafer_core::ros_nh->getNamespace());
 
         _serv.reset(new actionlib::SimpleActionServer<pose_goalAction>(*cafer_core::ros_nh, glob_params["controller_server"],
                     boost::bind(&Controller::execute, this, _1),false));
-
-        _crustcrawler_mover.reset(new crustcrawler_mover::CRUSTCRAWLER_Mover(*cafer_core::ros_nh));
-        _move_crustcrawler_arm.reset(new ros::ServiceClient(cafer_core::ros_nh->serviceClient<crustcrawler_mover_utils::move_crustcrawler_arm>("/move_crustcrawler_arm")));
-        _gripper_command_publisher.reset(new ros::Publisher(cafer_core::ros_nh->advertise<crustcrawler_core_msgs::EndEffectorCommand>
-                                                            ("/crustcrawler/end_effector/gripper/command", 1, this)));
+        _baxter_mover.reset(new baxter_mover::BAXTER_Mover(*cafer_core::ros_nh));
+        _move_baxter_arm.reset(new ros::ServiceClient(cafer_core::ros_nh->serviceClient<baxter_mover_utils::move_baxter_arm>("/move_baxter_arm")));
     }
 
     void init(){
@@ -60,32 +57,34 @@ public:
         _serv->start();
         _is_init = true;
 
-        _home_variable_values.insert ( std::pair<std::string, double>("joint_1", -1.3) );
-        _home_variable_values.insert ( std::pair<std::string, double>("joint_2",  -0.3) );
-        _home_variable_values.insert ( std::pair<std::string, double>("joint_3", -1.1) );
-        _home_variable_values.insert ( std::pair<std::string, double>("joint_4",  0.0) );
-        _home_variable_values.insert ( std::pair<std::string, double>("joint_5", -0.5) );
-        _home_variable_values.insert ( std::pair<std::string, double>("joint_6",  0.0) );
+        _home_variable_values.insert ( std::pair<std::string, double>("left_s0",  1.5) );
+        _home_variable_values.insert ( std::pair<std::string, double>("left_s1", -1.2) );
+        _home_variable_values.insert ( std::pair<std::string, double>("left_e0", -1.0) );
+        _home_variable_values.insert ( std::pair<std::string, double>("left_e1",  1.5) );
+        _home_variable_values.insert ( std::pair<std::string, double>("left_w0",  0.4) );
+        _home_variable_values.insert ( std::pair<std::string, double>("left_w1",  1.5) );
+        _home_variable_values.insert ( std::pair<std::string, double>("left_w2",  1.02) );
 
-        home_values_ = {-1.3, -0.3, -1.1, 0.0, -0.5, 0.0};
+        home_values_ = {1.5, -1.2 -1.0, 1.5, 0.4, 1.5, 1.02};
 
         _uniform = std::uniform_real_distribution<double>(M_PI/4, 3*M_PI/4);
 
         ros::AsyncSpinner my_spinner(4);
         my_spinner.start();
 
-        _crustcrawler_mover->group->setPlannerId(static_cast<std::string>(_crustcrawler_mover->global_parameters.get_planner_parameters()["planner_id"]));
-        _crustcrawler_mover->group->setPlanningTime(std::stod(_crustcrawler_mover->global_parameters.get_planner_parameters()["planning_time"]));
+        _baxter_mover->group->setPlannerId(static_cast<std::string>(_baxter_mover->global_parameters.get_planner_parameters()["planner_id"]));
+        ROS_INFO_STREAM("CONTROLLER: planner id is: " << static_cast<std::string>(_baxter_mover->global_parameters.get_planner_parameters()["planner_id"]));
+        //_baxter_mover->group->setPlanningTime(std::stod(_baxter_mover->global_parameters.get_planner_parameters()["planning_time"]));
 
-        // geometry_msgs::PoseStamped pose = _crustcrawler_mover->group->getPoseTarget();
+        // geometry_msgs::PoseStamped pose = _baxter_mover->group->getPoseTarget();
         // ROS_WARN_STREAM("CONTROLLER_NODE : " << pose.pose.position.x << " "
         //                                      << pose.pose.position.y << " "
         //                                      << pose.pose.position.z << " "
         //                                    );
 
-        _crustcrawler_mover->group->setJointValueTarget(_home_variable_values);
-        if(_crustcrawler_mover->group->plan(_group_plan))
-            _crustcrawler_mover->group->execute(_group_plan);
+        _baxter_mover->group->setJointValueTarget(_home_variable_values);
+        if(_baxter_mover->group->plan(_group_plan))
+            _baxter_mover->group->execute(_group_plan);
 
 
     }
@@ -106,13 +105,13 @@ public:
     void extract_arm_joints_values(){
         std::vector<std::string> joint_names;
         std::vector<double> joint_values;
-        joint_names = _crustcrawler_mover->global_parameters.get_crustcrawler_arm_joints_names();
+        joint_names = _baxter_mover->global_parameters.get_baxter_arm_joints_names();
 
         for(unsigned i = 0; i < joint_names.size(); ++i){
-            joint_values.push_back(_crustcrawler_mover->global_parameters.get_joint_state().position[distance
-                                   (_crustcrawler_mover->global_parameters.get_joint_state().name.begin(),
-                                    find(_crustcrawler_mover->global_parameters.get_joint_state().name.begin(),
-                                         _crustcrawler_mover->global_parameters.get_joint_state().name.end(),
+            joint_values.push_back(_baxter_mover->global_parameters.get_joint_state().position[distance
+                                   (_baxter_mover->global_parameters.get_joint_state().name.begin(),
+                                    find(_baxter_mover->global_parameters.get_joint_state().name.begin(),
+                                         _baxter_mover->global_parameters.get_joint_state().name.end(),
                                          joint_names[i]))]);
         }
         arm_joint_values_ = joint_values;
@@ -120,13 +119,14 @@ public:
 
     void execute(const pose_goalGoalConstPtr& poseGoal)
     {
+        ROS_INFO("CONTROLLER: Goal received trying to execute");
         /* make sure you are at home position */
         extract_arm_joints_values();
         if(largest_difference(arm_joint_values_,
                               home_values_) > 0.2){
-            _crustcrawler_mover->group->setJointValueTarget(_home_variable_values);
-            if(_crustcrawler_mover->group->plan(_group_plan)){
-                _crustcrawler_mover->group->execute(_group_plan);
+            _baxter_mover->group->setJointValueTarget(_home_variable_values);
+            if(_baxter_mover->group->plan(_group_plan)){
+                _baxter_mover->group->execute(_group_plan);
             }
         }
 
@@ -140,32 +140,21 @@ public:
 
         double theta = _uniform(_re);
 
-        /* close the gripper */
-        _gripper_command.args = "{position: 0.0}";
-        _gripper_command.command = "go";
-        _gripper_command_publisher->publish(_gripper_command);
-
         /* first trajectory */
         ROS_INFO_STREAM("CONTROLLER_NODE : first trajectory");
 
         geometry_msgs::Pose first_pose;
 
-        bool got_plan = false;
-        int n = 0;
-        do {
-            first_pose.position.x = poseGoal->target_pose[0] - signe*cos(theta)*0.1;
-            first_pose.position.y = poseGoal->target_pose[1] - signe*sin(theta)*0.1;
-            first_pose.position.z = poseGoal->target_pose[2] + 0.1;
-            first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 3*M_PI/2 - 0.1*n, 0.0);
+        first_pose.position.x = poseGoal->target_pose[0] - signe*cos(theta)*0.1;
+        first_pose.position.y = poseGoal->target_pose[1] - signe*sin(theta)*0.1;
+        first_pose.position.z = poseGoal->target_pose[2];
+        first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, M_PI, 0.0);
 
-            _crustcrawler_mover->group->setPoseTarget(first_pose);
-            got_plan = _crustcrawler_mover->group->plan(_group_plan);
+        _baxter_mover->group->setPoseTarget(first_pose);
+        _baxter_mover->group->plan(_group_plan);
+        _baxter_mover->group->execute(_group_plan);
 
-            n += 1;
-        } while (!got_plan && n < 30);
-
-        /* execute the trajectory */
-        _crustcrawler_mover->group->execute(_group_plan);
+        usleep(2e6);
 
 
         /* second trajectory */
@@ -174,36 +163,28 @@ public:
         geometry_msgs::Pose final_pose;
         moveit_msgs::RobotTrajectory pushing_trajectory;
 
-        double f = 0.0;
-        n = 0;
-        while (f < 1.0 && n < 300) {
-            first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 3*M_PI/2 - 0.01*n, 0.0);
+        final_pose.position.x = poseGoal->target_pose[0] + signe*cos(theta)*0.1;
+        final_pose.position.y = poseGoal->target_pose[1] + signe*sin(theta)*0.1;
+        final_pose.position.z = poseGoal->target_pose[2];
+        final_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, M_PI, 0.0);
 
-            final_pose.position.x = poseGoal->target_pose[0] + signe*cos(theta)*0.1;
-            final_pose.position.y = poseGoal->target_pose[1] + signe*sin(theta)*0.1;
-            final_pose.position.z = poseGoal->target_pose[2] + 0.1;
-            first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 3*M_PI/2 - 0.01*n, 0.0);
+        std::vector<geometry_msgs::Pose> waypoints;
 
-            std::vector<geometry_msgs::Pose> waypoints;
+        waypoints.push_back(first_pose);
+        waypoints.push_back(final_pose);
 
-            waypoints.push_back(first_pose);
-            waypoints.push_back(final_pose);
-
-            f = _crustcrawler_mover->group->computeCartesianPath(waypoints, 0.025, 0.0, pushing_trajectory, false);
-            n += 1;
-        }
-
-        /* execute the trajectory */
+        _baxter_mover->group->computeCartesianPath(waypoints, 0.025, 0.0, pushing_trajectory, false);
         moveit::planning_interface::MoveGroup::Plan touch_plan;
         touch_plan.trajectory_ = pushing_trajectory;
-        _crustcrawler_mover->group->execute(touch_plan);
+        _baxter_mover->group->execute(touch_plan);
         _touch_object_success = true;
 
+        usleep(2e6);
 
         /* return to home position */
-        _crustcrawler_mover->group->setJointValueTarget(_home_variable_values);
-        if(_crustcrawler_mover->group->plan(_group_plan))
-            _crustcrawler_mover->group->execute(_group_plan);
+        _baxter_mover->group->setJointValueTarget(_home_variable_values);
+        if(_baxter_mover->group->plan(_group_plan))
+            _baxter_mover->group->execute(_group_plan);
 
         if(_touch_object_success){
             ROS_INFO_STREAM("CONTROLLER_NODE : The motion was successful !!");
@@ -221,13 +202,13 @@ public:
 
 private:
     std::shared_ptr<actionlib::SimpleActionServer<pose_goalAction>> _serv;
-    std::shared_ptr<ros::Publisher> _scene_publisher, _gripper_command_publisher;
+    std::shared_ptr<ros::Publisher> _scene_publisher;
     moveit_msgs::PlanningScene _new_scene;
-    std::unique_ptr<ros::ServiceClient> _move_crustcrawler_arm;
+    std::unique_ptr<ros::ServiceClient> _move_baxter_arm;
     Eigen::VectorXd _pose_home;
-    crustcrawler_mover_utils::move_crustcrawler_arm::Request _motion_request;
-    crustcrawler_mover_utils::move_crustcrawler_arm::Response _motion_response;
-    crustcrawler_mover::CRUSTCRAWLER_Mover::Ptr _crustcrawler_mover;
+    baxter_mover_utils::move_baxter_arm::Request _motion_request;
+    baxter_mover_utils::move_baxter_arm::Response _motion_response;
+    baxter_mover::BAXTER_Mover::Ptr _baxter_mover;
     object_babbling::pose_goalFeedback _joints_pose_feedback;
     std::map<std::string, double> _home_variable_values;
     moveit::planning_interface::MoveGroup::Plan _group_plan;
@@ -235,7 +216,6 @@ private:
     double fraction_;
     moveit_msgs::RobotTrajectory robot_trajectory_;
     std::shared_ptr<robot_state::RobotState> _robot_state;
-    crustcrawler_core_msgs::EndEffectorCommand _gripper_command;
     bool _touch_object_success = false;
     std::vector<double> arm_joint_values_, home_values_;
 

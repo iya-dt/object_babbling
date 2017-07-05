@@ -7,13 +7,13 @@ managed:
   object_babbling:
     motion_detector:
       launch: "motion_detector.launch"
-      depends_on: "openni2"
+      depends_on: "freenect"
     robot_controller:
       launch: "robot_controller.launch"
     babbling:
       launch: "babbling.launch"
-      depends_on: "openni2,motion_detector,robot_controller"
+      depends_on: "freenect,motion_detector,robot_controller"
 externals:
-  openni2_launch:
-    openni2:
-      launch: "openni2.launch"
+  freenect_launch:
+    freenect:
+      launch: "freenect.launch __ns:=/object_babbling"

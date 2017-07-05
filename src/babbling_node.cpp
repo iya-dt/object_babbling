@@ -51,8 +51,8 @@
 
 #include "object_babbling/pose_goalAction.h"
 #include "object_babbling/is_moving.h"
-#include "object_babbling/dataset.h"
-#include "object_babbling/gmm_archive.h"
+//#include "object_babbling/dataset.h"
+//#include "object_babbling/gmm_archive.h"
 #include "object_babbling/rgbd_motion_data.h"
 
 #include "globals.h"
@@ -104,6 +104,7 @@ public:
 
         _client_motion.reset(
                 new ros::ServiceClient(ros_nh->serviceClient<is_moving>(glob_params["motion_detector_service"])));
+
 
         // Images
         _images_sub.reset(
@@ -198,6 +199,7 @@ public:
         _clouds_ready = false;
 
         _counter_iter = 0;
+        usleep(2e6);
     }
 
     void client_disconnect_from_ros() override
@@ -240,7 +242,18 @@ public:
         std::string supervisor_name =
             ros::names::parentNamespace(cafer_core::ros_nh->getNamespace()) + "/babbling";
 
-        if (_db_init) {
+        // Image
+        _depth_msg = sensor_msgs::ImageConstPtr(new sensor_msgs::Image(_images_sub->get_depth()));
+        _rgb_msg = sensor_msgs::ImageConstPtr(new sensor_msgs::Image(_images_sub->get_rgb()));
+        _info_msg = sensor_msgs::CameraInfoConstPtr(new sensor_msgs::CameraInfo(_images_sub->get_rgb_info()));
+        //ROS_INFO_STREAM("BABBLING_NODE : update");
+        if (!_db_init && !_rgb_msg->data.empty() && !_depth_msg->data.empty()) {
+            ROS_INFO_STREAM("BABBLING_NODE : waiting for db manager");
+        }
+
+        //ROS_INFO_STREAM("BABBLING: Size of received cloud is: " << _depth_msg->data.size());
+        //ROS_INFO_STREAM("BABBLING: name space is: " << cafer_core::ros_nh->getNamespace());
+        if (_db_init && !_rgb_msg->data.empty() && !_depth_msg->data.empty()) {
             if (_db_ready && !_recording) {
                 ip::PointCloudXYZ point_tracked;
                 sensor_msgs::PointCloud2 point_tracked_msg;
@@ -311,8 +324,10 @@ public:
                 }
 
                 // Choosing an action
-                Vector4d target_center_robot;
-                babbling::base_conversion(target_center_robot, _target_center);
+                Vector3d center_camera_frame;
+                center_camera_frame << _target_center(0), _target_center(1), _target_center(2);
+                Vector3d target_center_robot;
+                babbling::tf_base_conversion(target_center_robot, center_camera_frame);
 
                 pose_goalGoal poseGoal;
                 poseGoal.target_pose.resize(3);
@@ -345,6 +360,7 @@ public:
                     _objects_hypotheses[_hypothesis_id].set_current(current_surface, _tracked_transformation);
 
                     _result_ptcl = _objects_hypotheses[_hypothesis_id].get_current_cloud();
+                    ROS_INFO_STREAM("BABBLING_NODE : result cloud size " << _result_ptcl->size());
 
                     _stop_db_recording();
 
@@ -417,6 +433,9 @@ private:
     std::unique_ptr<actionlib::SimpleActionClient<pose_goalAction>> _client_controller;
 
     RGBD_Subscriber::Ptr _images_sub;
+    sensor_msgs::ImageConstPtr _depth_msg;
+    sensor_msgs::ImageConstPtr _rgb_msg;
+    sensor_msgs::CameraInfoConstPtr _info_msg;
 
     std::unique_ptr<Publisher> _ptcl_pub;
     std::unique_ptr<Publisher> _saliency_ptcl_pub;
@@ -462,7 +481,7 @@ private:
     ip::PointCloudT::Ptr _result_ptcl;
     Eigen::Affine3f _tracked_transformation;
     int _track_count = 0;
-    double _downsampling_grid_size = 0.003;
+    double _downsampling_grid_size = 0.001;
     std::shared_ptr<KLDAdaptiveParticleFilterOMPTracker<ip::PointT, ParticleXYZRPY> > _tracker;
 
 
@@ -481,17 +500,7 @@ private:
     {
         ROS_INFO_STREAM("BABBLING_NODE : extracting supervoxels");
 
-        // Image
-        sensor_msgs::ImageConstPtr depth_msg(new sensor_msgs::Image(_images_sub->get_depth()));
-        sensor_msgs::ImageConstPtr rgb_msg(new sensor_msgs::Image(_images_sub->get_rgb()));
-        sensor_msgs::CameraInfoConstPtr info_msg(new sensor_msgs::CameraInfo(_images_sub->get_rgb_info()));
-
-        if (rgb_msg->data.empty() || depth_msg->data.empty()) {
-            ROS_ERROR_STREAM("BABBLING_NODE : empty cloud");
-            throw std::runtime_error("BABBLING_NODE : empty cloud");
-        }
-
-        rgbd_utils::RGBD_to_Pointcloud converter(depth_msg, rgb_msg, info_msg);
+        rgbd_utils::RGBD_to_Pointcloud converter(_depth_msg, _rgb_msg, _info_msg);
 
         sensor_msgs::PointCloud2 ptcl_msg = converter.get_pointcloud();
 
@@ -661,7 +670,7 @@ private:
         _tracker->setInitialNoiseMean(default_initial_mean);
         _tracker->setIterationNum(1);
         _tracker->setParticleNum(600);
-        _tracker->setResampleLikelihoodThr(0.00);
+        _tracker->setResampleLikelihoodThr(0.05);
         _tracker->setUseNormal(false);
 
 
@@ -683,7 +692,7 @@ private:
 
         boost::shared_ptr<pcl::search::Octree<ip::PointT> > search (new pcl::search::Octree<ip::PointT>(0.01));
         coherence->setSearchMethod(search);
-        coherence->setMaximumDistance(0.01);
+        coherence->setMaximumDistance(0.005);
 
         _tracker->setCloudCoherence(coherence);
 
@@ -720,7 +729,7 @@ private:
         sensor_msgs::ImageConstPtr rgb_msg(new sensor_msgs::Image(msg->rgb));
         sensor_msgs::CameraInfoConstPtr info_msg(new sensor_msgs::CameraInfo(msg->rgb_info));
 
-        if (rgb_msg->data.empty() || depth_msg->data.empty()) {
+        if (rgb_msg->data.empty() && depth_msg->data.empty()) {
             ROS_ERROR_STREAM("BABBLING_NODE : tracking empty cloud");
             return;
         }
@@ -849,11 +858,11 @@ private:
                   static_cast<double>(wks["sphere"]["radius"]),
                   static_cast<double>(wks["sphere"]["threshold"]),
                  {static_cast<double>(wks["csg_intersect_cuboid"]["x_min"]),
-				          static_cast<double>(wks["csg_intersect_cuboid"]["x_max"]),
+                  static_cast<double>(wks["csg_intersect_cuboid"]["x_max"]),
                   static_cast<double>(wks["csg_intersect_cuboid"]["y_min"]),
-				          static_cast<double>(wks["csg_intersect_cuboid"]["y_max"]),
+                  static_cast<double>(wks["csg_intersect_cuboid"]["y_max"]),
                   static_cast<double>(wks["csg_intersect_cuboid"]["z_min"]),
-				          static_cast<double>(wks["csg_intersect_cuboid"]["z_max"])}
+                  static_cast<double>(wks["csg_intersect_cuboid"]["z_max"])}
                 )
         );
     }
@@ -906,6 +915,7 @@ int main(int argc, char** argv)
     Babbling babbling(cafer["mgmt"], cafer["type"], cafer["freq"], cafer["uuid"]);
 
     babbling.wait_for_init();
+    babbling.spin();
 
     ROS_INFO_STREAM("BABBLING_NODE : Babbling ready !");
 

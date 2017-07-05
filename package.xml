@@ -21,7 +21,7 @@
     <build_depend>yaml_cpp</build_depend>
     <build_depend>moveit_ros_planning_interface</build_depend>
     <build_depend>rgbd_utils</build_depend>
-    <build_depend>crustcrawler_mover_utils</build_depend>
+    <build_depend>baxter_mover_utils</build_depend>
 
     <run_depend>cv_bridge</run_depend>
     <run_depend>roscpp</run_depend>
@@ -36,7 +36,7 @@
     <run_depend>yaml_cpp</run_depend>
     <run_depend>moveit_ros_planning_interface</run_depend>
     <run_depend>rgbd_utils</run_depend>
-    <run_depend>crustcrawler_mover_utils</run_depend>
+    <run_depend>baxter_mover_utils</run_depend>
 
     <export>
         <!-- Other tools can request additional information be placed here -->

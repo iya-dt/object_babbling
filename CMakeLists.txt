@@ -21,7 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
   actionlib
   actionlib_msgs
   rgbd_utils
-  crustcrawler_mover_utils
+  baxter_mover_utils
   moveit_ros_planning_interface
 )
 
@@ -47,7 +47,7 @@ find_path(IAGMM_INCLUDE_DIR iagmm)
 find_library(IAGMM_LIBRARY NAMES iagmm)
 
 ## Crustcrawler
-set(ROBOT_SOURCE_FILES src/crustcrawler_moveit_utils.cpp)
+set(ROBOT_SOURCE_FILES src/baxter_moveit_utils.cpp)
 set(ROBOT_LIBS ${catkin_LIBRARIES})
 
 set(CAMERA_SOURCE_FILES src/motion_detector_node.cpp)

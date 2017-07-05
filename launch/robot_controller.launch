@@ -1,5 +1,7 @@
 <launch>
-    <arg name="camera_link_pose" default="0.89 -0.06 0.81 -0.34 0.002 0.98 0.01"/>
+    <!--arg name="camera_link_pose" default="0.247 0.095 0.905 -0.019 0.527 0.016 0.850"/-->
+    <arg name="camera_link_pose" default="1.45 0.0 0.56 -0.387 -0.021 0.922 0.019"/>
+
 
     <arg name="ns" default="object_babbling"/>
     <arg name="exec_name" default="controller_node"/>
@@ -18,13 +20,13 @@
 
     <node name="statict_transform" pkg="tf" type="static_transform_publisher" args=" $(arg camera_link_pose) /world /camera_link 100"/>
 
-    <rosparam command="load" file="$(find object_babbling)/launch/params/planner_params.yml" ns="planner_parameters"/>
+    <rosparam command="load" file="$(find object_babbling)/launch/params/planner_params.yml" ns="/object_babbling/controller_node/planner_parameters"/>
 
     <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" output="screen">
-    <!-- <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" output="screen" launch-prefix="xterm -e gdb -args"> -->
+    <!--node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" output="screen" launch-prefix="xterm -e gdb -args"--> 
         <rosparam ns="cafer" subst_value="True">
             mgmt: "/management_topic"
-            freq: 10.0
+            freq: 30.0
             type: "$(arg cafer_type)"
             uuid: "$(arg managed_uuid)"
         </rosparam>
