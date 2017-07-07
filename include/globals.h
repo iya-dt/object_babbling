@@ -38,30 +38,6 @@ namespace global {
 }//global namespace
 
 namespace babbling {
-    /**
-    * @brief Conversion from the camera frame to the robot frame
-    * @param out_pose
-    * @param in_pose
-    * @param translation along x
-    * @param translation along y
-    * @param translation along z
-    * @param rotation around x (yaw)
-    * @param rotation around y (pitch)
-    * @param rotation around z (roll)
-    */
-    void base_conversion(Eigen::Vector4d& out_pose, const Eigen::Vector4d& in_pose)
-    {
-        Eigen::Matrix4d Trans_M;
-
-        // front table camera
-        Trans_M <<  0.107771,  0.816759,  -0.77785,  0.899714,
-             1.05818,  0.029358,  0.166672, -0.203503,
-           0.0456001, -0.769741,  -0.67249,  0.814146,
-            0,                0,        0,        1;
-
-        out_pose = Trans_M * in_pose;
-    }
-
 
     //Convert object position from camera frame to robot frame
     void tf_base_conversion(Eigen::Vector3d& object_pose_in_robot_frame, Eigen::Vector3d& object_pose_in_camera_frame){

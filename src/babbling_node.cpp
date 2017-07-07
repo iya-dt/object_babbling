@@ -311,8 +311,10 @@ public:
                 }
 
                 // Choosing an action
-                Vector4d target_center_robot;
-                babbling::base_conversion(target_center_robot, _target_center);
+                Vector3d target_center_camera;
+                target_center_camera << _target_center(0), _target_center(1), _target_center(2);
+                Vector3d target_center_robot;
+                babbling::tf_base_conversion(target_center_robot, target_center_camera);
 
                 pose_goalGoal poseGoal;
                 poseGoal.target_pose.resize(3);

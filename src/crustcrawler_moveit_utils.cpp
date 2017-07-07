@@ -138,7 +138,8 @@ public:
             signe = +1.0;
         }
 
-        double theta = _uniform(_re);
+        // double theta = _uniform(_re);
+        double theta = M_PI/2;
 
         /* close the gripper */
         _gripper_command.args = "{position: 0.0}";
@@ -155,7 +156,7 @@ public:
         do {
             first_pose.position.x = poseGoal->target_pose[0] - signe*cos(theta)*0.1;
             first_pose.position.y = poseGoal->target_pose[1] - signe*sin(theta)*0.1;
-            first_pose.position.z = poseGoal->target_pose[2] + 0.1;
+            first_pose.position.z = poseGoal->target_pose[2] + 0.05;
             first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 3*M_PI/2 - 0.1*n, 0.0);
 
             _crustcrawler_mover->group->setPoseTarget(first_pose);
@@ -181,15 +182,15 @@ public:
 
             final_pose.position.x = poseGoal->target_pose[0] + signe*cos(theta)*0.1;
             final_pose.position.y = poseGoal->target_pose[1] + signe*sin(theta)*0.1;
-            final_pose.position.z = poseGoal->target_pose[2] + 0.1;
-            first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 3*M_PI/2 - 0.01*n, 0.0);
+            final_pose.position.z = poseGoal->target_pose[2] + 0.05;
+            final_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 3*M_PI/2 - 0.01*n, 0.0);
 
             std::vector<geometry_msgs::Pose> waypoints;
 
             waypoints.push_back(first_pose);
             waypoints.push_back(final_pose);
 
-            f = _crustcrawler_mover->group->computeCartesianPath(waypoints, 0.025, 0.0, pushing_trajectory, false);
+            f = _crustcrawler_mover->group->computeCartesianPath(waypoints, 0.01, 0.0, pushing_trajectory, false);
             n += 1;
         }
 
