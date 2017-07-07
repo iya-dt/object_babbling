@@ -246,140 +246,140 @@ public:
         _depth_msg = sensor_msgs::ImageConstPtr(new sensor_msgs::Image(_images_sub->get_depth()));
         _rgb_msg = sensor_msgs::ImageConstPtr(new sensor_msgs::Image(_images_sub->get_rgb()));
         _info_msg = sensor_msgs::CameraInfoConstPtr(new sensor_msgs::CameraInfo(_images_sub->get_rgb_info()));
-        //ROS_INFO_STREAM("BABBLING_NODE : update");
-        if (!_db_init && !_rgb_msg->data.empty() && !_depth_msg->data.empty()) {
-            ROS_INFO_STREAM("BABBLING_NODE : waiting for db manager");
+
+        if (_rgb_msg->data.empty() || _depth_msg->data.empty()) {
+            return;
         }
 
-        //ROS_INFO_STREAM("BABBLING: Size of received cloud is: " << _depth_msg->data.size());
-        //ROS_INFO_STREAM("BABBLING: name space is: " << cafer_core::ros_nh->getNamespace());
-        if (_db_init && !_rgb_msg->data.empty() && !_depth_msg->data.empty()) {
-            if (_db_ready && !_recording) {
-                ip::PointCloudXYZ point_tracked;
-                sensor_msgs::PointCloud2 point_tracked_msg;
-                pcl::toROSMsg(point_tracked, point_tracked_msg);
-                point_tracked_msg.header = _images_sub->get_depth().header;
-                _tracked_point_pub->publish(point_tracked_msg);
+        if (!_db_init) {
+            ROS_INFO_STREAM("BABBLING_NODE : waiting for db manager");
+            return;
+        }
 
-                sensor_msgs::PointCloud2 tracked_ptcl_msg;
-                pcl::toROSMsg(*_tracked_ptcl, tracked_ptcl_msg);
-                tracked_ptcl_msg.header = _images_sub->get_depth().header;
-                _tracked_ptcl_pub->publish(tracked_ptcl_msg);
+        if (_db_ready && !_recording) {
+            ip::PointCloudXYZ point_tracked;
+            sensor_msgs::PointCloud2 point_tracked_msg;
+            pcl::toROSMsg(point_tracked, point_tracked_msg);
+            point_tracked_msg.header = _images_sub->get_depth().header;
+            _tracked_point_pub->publish(point_tracked_msg);
 
-                ROS_WARN_STREAM("BABBLING_NODE : BEGIN ITERATION " << _counter_iter
-                                << " (" << _objects_hypotheses.size() << " hypotheses availables)");
-                // Initialize the iteration
-                _surface = _extract_surface(_saliency_modality, _modality);
+            sensor_msgs::PointCloud2 tracked_ptcl_msg;
+            pcl::toROSMsg(*_tracked_ptcl, tracked_ptcl_msg);
+            tracked_ptcl_msg.header = _images_sub->get_depth().header;
+            _tracked_ptcl_pub->publish(tracked_ptcl_msg);
 
-                _surface.init_weights(_saliency_modality, 0.5);
-                _surface.compute_weights<SaliencyClassifier>(_saliency_modality, _saliency_classifier);
+            ROS_WARN_STREAM("BABBLING_NODE : BEGIN ITERATION " << _counter_iter
+                            << " (" << _objects_hypotheses.size() << " hypotheses availables)");
+            // Initialize the iteration
+            _surface = _extract_surface(_saliency_modality, _modality);
 
-                if (_create_new_hypothesis) {
-                    ROS_WARN_STREAM("BABBLING_NODE : creating new hypothesis");
+            _surface.init_weights(_saliency_modality, 0.5);
+            _surface.compute_weights<SaliencyClassifier>(_saliency_modality, _saliency_classifier);
 
-                    ObjectHyp new_hyp = _new_hypothesis(
-                        _surface,
-                        _saliency_modality,
-                        _modality
-                    );
-                    _objects_hypotheses.push_back(new_hyp);
+            if (_create_new_hypothesis) {
+                ROS_WARN_STREAM("BABBLING_NODE : creating new hypothesis");
 
-                    _hypothesis_id = _objects_hypotheses.size() - 1;
-
-                    _create_new_hypothesis = false;
-                }
-                else {
-                    int nb_s = _objects_hypotheses[_hypothesis_id].get_classifier().dataset_size();
-                    ROS_WARN_STREAM("BABBLING_NODE : improving hypothesis " << _hypothesis_id
-                                    << " (" << nb_s <<" samples availables)");
-
-                }
-
-                // Feedback information
-                _saliency_weights = _surface.get_weights()[_saliency_modality];
-                _weights = _compute_object_weights(
+                ObjectHyp new_hyp = _new_hypothesis(
                     _surface,
-                    _objects_hypotheses
+                    _saliency_modality,
+                    _modality
                 );
+                _objects_hypotheses.push_back(new_hyp);
 
-                _saliency_ptcl = _surface.getColoredWeightedCloud(_saliency_modality).makeShared();
-                _object_saliency_ptcl = _surface.getColoredWeightedCloud(_weights[_hypothesis_id]).makeShared();
-                _clouds_ready = true;
+                _hypothesis_id = _objects_hypotheses.size() - 1;
 
-                publish_feedback();
-
-                _start_db_recording();
+                _create_new_hypothesis = false;
+            }
+            else {
+                int nb_s = _objects_hypotheses[_hypothesis_id].get_classifier().dataset_size();
+                ROS_WARN_STREAM("BABBLING_NODE : improving hypothesis " << _hypothesis_id
+                                << " (" << nb_s <<" samples availables)");
             }
 
-            if (_robot_controller_ready && _recording) {
-                _objects_hypotheses[_hypothesis_id].set_initial(_surface);
+            // Feedback information
+            _saliency_weights = _surface.get_weights()[_saliency_modality];
+            _weights = _compute_object_weights(
+                _surface,
+                _objects_hypotheses
+            );
 
-                _target_ptcl = _objects_hypotheses[_hypothesis_id].get_initial_cloud();
-                ROS_INFO_STREAM("BABBLING_NODE : target cloud size " << _target_ptcl->size());
-                pcl::compute3DCentroid<ip::PointT>(*_target_ptcl, _target_center);
+            _saliency_ptcl = _surface.getColoredWeightedCloud(_saliency_modality).makeShared();
+            _object_saliency_ptcl = _surface.getColoredWeightedCloud(_weights[_hypothesis_id]).makeShared();
+            _clouds_ready = true;
 
-                if (_target_ptcl->size() == 0){
-                    ROS_ERROR_STREAM("BABBLING_NODE : empty target cloud :(");
-                    throw std::runtime_error("BABBLING_NODE : empty target cloud :(");
-                }
+            publish_feedback();
 
-                // Choosing an action
-                Vector3d center_camera_frame;
-                center_camera_frame << _target_center(0), _target_center(1), _target_center(2);
-                Vector3d target_center_robot;
-                babbling::tf_base_conversion(target_center_robot, center_camera_frame);
+            _start_db_recording();
+        }
 
-                pose_goalGoal poseGoal;
-                poseGoal.target_pose.resize(3);
-                poseGoal.target_pose[0] = target_center_robot(0);
-                poseGoal.target_pose[1] = target_center_robot(1);
-                poseGoal.target_pose[2] = target_center_robot(2);
+        if (_robot_controller_ready && _recording) {
+            if(!_objects_hypotheses[_hypothesis_id].set_initial(_surface)) {
+                ROS_ERROR_STREAM("BABBLING_NODE : failed to set object's initial surface");
 
-                ROS_INFO_STREAM("BABBLING_NODE : going to pose "
-                    << poseGoal.target_pose[0] << " "
-                    << poseGoal.target_pose[1] << " "
-                    << poseGoal.target_pose[2]);
-
-                _start_tracking();
-
-                _client_controller->sendGoal(poseGoal);
-                _robot_controller_ready = false;
+                _objects_hypotheses[_hypothesis_id].recover_center(_surface);
+                return;
             }
 
-            if (!_robot_controller_ready) {
-                _client_controller->waitForResult(ros::Duration(1.0));
-                auto client_status = _client_controller->getState();
-                if (client_status == actionlib::SimpleClientGoalState::SUCCEEDED) {
-                    ROS_INFO_STREAM("BABBLING_NODE : position reached");
-                    _robot_controller_ready = true;
+            _target_ptcl = _objects_hypotheses[_hypothesis_id].get_initial_cloud();
+            _target_center = _objects_hypotheses[_hypothesis_id].get_center();
 
-                    _stop_tracking();
+            ROS_INFO_STREAM("BABBLING_NODE : target cloud size " << _target_ptcl->size());
 
-                    // Update object hypothesis
-                    ip::SurfaceOfInterest current_surface = _extract_surface(_saliency_modality, _modality);
-                    _objects_hypotheses[_hypothesis_id].set_current(current_surface, _tracked_transformation);
+            Vector3d center_camera_frame;
+            center_camera_frame << _target_center(0), _target_center(1), _target_center(2);
+            Vector3d target_center_robot;
+            babbling::tf_base_conversion(target_center_robot, center_camera_frame);
 
-                    _result_ptcl = _objects_hypotheses[_hypothesis_id].get_result_cloud();
-                    ROS_INFO_STREAM("BABBLING_NODE : result cloud size " << _result_ptcl->size());
+            pose_goalGoal poseGoal;
+            poseGoal.target_pose.resize(3);
+            poseGoal.target_pose[0] = target_center_robot(0);
+            poseGoal.target_pose[1] = target_center_robot(1);
+            poseGoal.target_pose[2] = target_center_robot(2);
 
-                    _stop_db_recording();
+            _start_tracking();
 
-                    if (_bored(_objects_hypotheses[_hypothesis_id])) {
-                        _create_new_hypothesis = true;
-                    }
+            _client_controller->sendGoal(poseGoal);
+            _robot_controller_ready = false;
+        }
 
-                    _counter_iter += 1;
-                    ROS_INFO_STREAM("BABBLING_NODE : iteration " << _counter_iter << " done (nb_iter = " << _nb_iter << ")");
+        if (!_robot_controller_ready) {
+            _client_controller->waitForResult(ros::Duration(1.0));
+            auto client_status = _client_controller->getState();
+            if (client_status == actionlib::SimpleClientGoalState::SUCCEEDED) {
+                ROS_INFO_STREAM("BABBLING_NODE : position reached");
+                _robot_controller_ready = true;
+
+                _stop_tracking();
+
+                // Update object hypothesis
+                ip::SurfaceOfInterest current_surface = _extract_surface(_saliency_modality, _modality);
+
+                if(!_objects_hypotheses[_hypothesis_id].set_current(current_surface, _tracked_transformation)) {
+                    ROS_ERROR_STREAM("BABBLING_NODE : tracking failed, model was not updated");
+
+                    _objects_hypotheses[_hypothesis_id].recover_center(_surface);
                 }
-                else if (client_status == actionlib::SimpleClientGoalState::ABORTED) {
-                    ROS_INFO_STREAM("BABBLING_NODE : position wasn't reachable");
-                    _robot_controller_ready = true;
 
-                    _stop_tracking();
+                _result_ptcl = _objects_hypotheses[_hypothesis_id].get_result_cloud();
+                ROS_INFO_STREAM("BABBLING_NODE : result cloud size " << _result_ptcl->size());
+
+                _stop_db_recording();
+
+                if (_bored(_objects_hypotheses[_hypothesis_id])) {
+                    _create_new_hypothesis = true;
                 }
-                else {
-                    // ROS_INFO_STREAM("BABBLING_NODE : waiting for controller...");
-                }
+
+                _counter_iter += 1;
+                ROS_INFO_STREAM("BABBLING_NODE : iteration " << _counter_iter << " done (nb_iter = " << _nb_iter << ")");
+            }
+            else if (client_status == actionlib::SimpleClientGoalState::ABORTED) {
+                ROS_INFO_STREAM("BABBLING_NODE : position wasn't reachable");
+                _robot_controller_ready = true;
+
+                _stop_tracking();
+            }
+            else {
+                // ROS_INFO_STREAM("BABBLING_NODE : waiting for controller...");
             }
         }
 
