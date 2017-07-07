@@ -359,10 +359,14 @@ public:
                     ip::SurfaceOfInterest current_surface = _extract_surface(_saliency_modality, _modality);
                     _objects_hypotheses[_hypothesis_id].set_current(current_surface, _tracked_transformation);
 
-                    _result_ptcl = _objects_hypotheses[_hypothesis_id].get_current_cloud();
+                    _result_ptcl = _objects_hypotheses[_hypothesis_id].get_result_cloud();
                     ROS_INFO_STREAM("BABBLING_NODE : result cloud size " << _result_ptcl->size());
 
                     _stop_db_recording();
+
+                    if (_bored(_objects_hypotheses[_hypothesis_id])) {
+                        _create_new_hypothesis = true;
+                    }
 
                     _counter_iter += 1;
                     ROS_INFO_STREAM("BABBLING_NODE : iteration " << _counter_iter << " done (nb_iter = " << _nb_iter << ")");
@@ -485,7 +489,6 @@ private:
     std::shared_ptr<KLDAdaptiveParticleFilterOMPTracker<ip::PointT, ParticleXYZRPY> > _tracker;
 
 
-
     bool _robot_controller_ready = true;
     bool _db_ready;
     bool _db_init;
@@ -548,8 +551,6 @@ private:
         return weights;
     }
 
-
-
     ObjectHyp _new_hypothesis(ip::SurfaceOfInterest& surface,
                               const std::string& saliency_modality,
                               const std::string& modality)
@@ -562,7 +563,7 @@ private:
             throw std::runtime_error("BABBLING_NODE : no region detected");
         }
 
-        // Select region
+        // Select region (@TODO : select according previous object hyp)
         std::vector<uint32_t> max_region = regions[0];
         for (const auto& region : regions)
         {
@@ -582,49 +583,6 @@ private:
 
         ObjectHyp hyp(classifier, saliency_modality, modality, center);
         return hyp;
-    }
-
-    size_t _choose_hypothesis(ip::SupervoxelSet& supervoxels,
-                              std::vector<ObjectHyp>& objects_hypotheses)
-    {
-        ROS_INFO_STREAM("BABBLING_NODE : choosing object hypothesis");
-
-        return 0;
-    }
-
-    uint32_t _choose_target(ip::saliency_map_t& map)
-    {
-        ROS_INFO_STREAM("BABBLING_NODE : choosing target");
-
-        // std::vector<uint32_t> candidates;
-        // for (const auto& e : map)
-        // {
-        //     if (e.second > 0.5) {
-        //         candidates.push_back(e.first);
-        //     }
-        // }
-        //
-        // if (candidates.size() == 0) {
-        //     ROS_ERROR_STREAM("BABBLING_NODE : no candidates for target");
-        //     return 0;
-        // }
-        // else {
-        //     int i = rand() % candidates.size();
-        //     return candidates[i];
-        // }
-
-        uint32_t max_label = 0;
-        double max_weight = 0;
-
-        for (const auto& e : map)
-        {
-            if (e.second > max_weight) {
-                max_label = e.first;
-                max_weight = e.second;
-            }
-        }
-
-        return max_label;
     }
 
     void _start_tracking()
@@ -841,6 +799,12 @@ private:
         else {
             ROS_ERROR_STREAM("BABBLING_NODE : unable to find supervisor at: " << supervisor_name);
         }
+    }
+
+    bool _bored(ObjectHyp& object)
+    {
+        int nb_s = object.get_classifier().dataset_size();
+        return nb_s > 500;
     }
 
     void _update_workspace()
