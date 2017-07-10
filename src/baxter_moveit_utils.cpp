@@ -121,14 +121,12 @@ public:
     {
         ROS_INFO("CONTROLLER: Goal received trying to execute");
         /* make sure you are at home position */
-        extract_arm_joints_values();
-        if(largest_difference(arm_joint_values_,
-                              home_values_) > 0.2){
+        do {
+            extract_arm_joints_values();
             _baxter_mover->group->setJointValueTarget(_home_variable_values);
-            if(_baxter_mover->group->plan(_group_plan)){
-                _baxter_mover->group->execute(_group_plan);
-            }
-        }
+            _baxter_mover->group->plan(_group_plan);
+            _baxter_mover->group->execute(_group_plan);
+        } while (largest_difference(arm_joint_values_, home_values_) > 0.2);
 
         double signe = 0.0;
         if (poseGoal->target_pose[1] > 0) {
@@ -154,7 +152,7 @@ public:
         _baxter_mover->group->plan(_group_plan);
         _baxter_mover->group->execute(_group_plan);
 
-        usleep(2e6);
+        usleep(1e6);
 
 
         /* second trajectory */
@@ -163,8 +161,8 @@ public:
         geometry_msgs::Pose final_pose;
         moveit_msgs::RobotTrajectory pushing_trajectory;
 
-        final_pose.position.x = poseGoal->target_pose[0] + signe*cos(theta)*0.1;
-        final_pose.position.y = poseGoal->target_pose[1] + signe*sin(theta)*0.1;
+        final_pose.position.x = poseGoal->target_pose[0] + signe*cos(theta)*0.05;
+        final_pose.position.y = poseGoal->target_pose[1] + signe*sin(theta)*0.05;
         final_pose.position.z = poseGoal->target_pose[2];
         final_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, M_PI, 0.0);
 
@@ -179,12 +177,15 @@ public:
         _baxter_mover->group->execute(touch_plan);
         _touch_object_success = true;
 
-        usleep(2e6);
-
         /* return to home position */
-        _baxter_mover->group->setJointValueTarget(_home_variable_values);
-        if(_baxter_mover->group->plan(_group_plan))
+        do {
+            extract_arm_joints_values();
+            _baxter_mover->group->setJointValueTarget(_home_variable_values);
+            _baxter_mover->group->plan(_group_plan);
             _baxter_mover->group->execute(_group_plan);
+        } while (largest_difference(arm_joint_values_, home_values_) > 0.2);
+
+        usleep(2e6);
 
         if(_touch_object_success){
             ROS_INFO_STREAM("CONTROLLER_NODE : The motion was successful !!");

@@ -199,7 +199,8 @@ public:
         _clouds_ready = false;
 
         _counter_iter = 0;
-        usleep(2e6);
+
+        usleep(1e6);
     }
 
     void client_disconnect_from_ros() override
@@ -343,7 +344,6 @@ public:
         }
 
         if (!_robot_controller_ready) {
-            _client_controller->waitForResult(ros::Duration(1.0));
             auto client_status = _client_controller->getState();
             if (client_status == actionlib::SimpleClientGoalState::SUCCEEDED) {
                 ROS_INFO_STREAM("BABBLING_NODE : position reached");
@@ -353,11 +353,15 @@ public:
 
                 // Update object hypothesis
                 ip::SurfaceOfInterest current_surface = _extract_surface(_saliency_modality, _modality);
+                current_surface.init_weights(_saliency_modality, 0.5);
+                current_surface.compute_weights<SaliencyClassifier>(_saliency_modality, _saliency_classifier);
+
+                _saliency_ptcl = current_surface.getColoredWeightedCloud(_saliency_modality).makeShared();
 
                 if(!_objects_hypotheses[_hypothesis_id].set_current(current_surface, _tracked_transformation)) {
-                    ROS_ERROR_STREAM("BABBLING_NODE : tracking failed, model was not updated");
+                    ROS_ERROR_STREAM("BABBLING_NODE : model was not updated");
 
-                    _objects_hypotheses[_hypothesis_id].recover_center(_surface);
+                    _objects_hypotheses[_hypothesis_id].recover_center(current_surface);
                 }
 
                 _result_ptcl = _objects_hypotheses[_hypothesis_id].get_result_cloud();
