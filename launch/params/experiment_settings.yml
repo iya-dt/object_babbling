@@ -1,4 +1,9 @@
-classifier_path: "/home/mukhtar/Downloads/iteration_72/dataset_normal.yml"
+dataset_path: "/home/mukhtar/Downloads/CLabNormHist_iteration_202/dataset_colorLabNormalHist.yml"
+classifier_path: "/home/mukhtar/Downloads/CLabNormHist_iteration_202/gmm_archive_colorLabNormalHist"
+classifier_modality: "colorLabNormalHist"
+classifier_sample_size: 30
+modality: "colorLabNormalHist"
+sample_size: 30
 number_of_iteration: 100
 sv:
   use_transform: false

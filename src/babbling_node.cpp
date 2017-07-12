@@ -30,7 +30,6 @@
 // #include <pcl/tracking/normal_coherence.h>
 #include <pcl/tracking/approx_nearest_pair_point_cloud_coherence.h>
 #include <pcl/tracking/nearest_pair_point_cloud_coherence.h>
-#include <pcl/registration/correspondence_rejection_sample_consensus.h>
 #include <pcl/filters/extract_indices.h>
 
 #include <rgbd_utils/rgbd_subscriber.hpp>
@@ -72,7 +71,6 @@ class Babbling : public Component {
 public:
 
     typedef iagmm::GMM Classifier;
-    typedef iagmm::NNMap SaliencyClassifier;
     typedef ip::Object<Classifier> ObjectHyp;
 
     ~Babbling()
@@ -96,8 +94,15 @@ public:
 
         ROS_INFO_STREAM("BABBLING_NODE : global parameters retrieved:" << std::endl << display_params.str());
 
-        _nb_iter = static_cast<int>(exp_params["number_of_iteration"]);
+        _dataset_path = static_cast<std::string>(exp_params["dataset_path"]);
         _classifier_path = static_cast<std::string>(exp_params["classifier_path"]);
+        _saliency_modality = static_cast<std::string>(exp_params["classifier_modality"]);
+        _saliency_sample_size = static_cast<int>(exp_params["classifier_sample_size"]);
+
+        _modality = static_cast<std::string>(exp_params["modality"]);
+        _sample_size = static_cast<int>(exp_params["sample_size"]);
+
+        _nb_iter = static_cast<int>(exp_params["number_of_iteration"]);
 
         _client_controller.reset(
                 new actionlib::SimpleActionClient<pose_goalAction>("controller_node/"+static_cast<std::string>(glob_params["controller_server"]), false));
@@ -179,12 +184,12 @@ public:
 
         _update_workspace();
 
-        _saliency_dataset = load_dataset(_classifier_path);
-        _saliency_classifier = SaliencyClassifier(3, 2, 0.3, 0.05);
-        _saliency_classifier.set_samples(_saliency_dataset);
-        _saliency_modality = "normal";
+        std::ifstream ifs(_classifier_path);
+        boost::archive::text_iarchive ia(ifs);
+        ia >> _saliency_classifier;
 
-        _modality = "fpfh";
+        _dataset = load_dataset(_dataset_path);
+        _saliency_classifier.set_samples(_dataset);
 
         _target_center << 0.0, 0.0, 0.0, 0.0;
         _tracked_center << 0.0, 0.0, 0.0, 0.0;
@@ -275,7 +280,7 @@ public:
             _surface = _extract_surface(_saliency_modality, _modality);
 
             _surface.init_weights(_saliency_modality, 0.5);
-            _surface.compute_weights<SaliencyClassifier>(_saliency_modality, _saliency_classifier);
+            _surface.compute_weights<Classifier>(_saliency_modality, _saliency_classifier);
 
             if (_create_new_hypothesis) {
                 ROS_WARN_STREAM("BABBLING_NODE : creating new hypothesis");
@@ -354,7 +359,7 @@ public:
                 // Update object hypothesis
                 ip::SurfaceOfInterest current_surface = _extract_surface(_saliency_modality, _modality);
                 current_surface.init_weights(_saliency_modality, 0.5);
-                current_surface.compute_weights<SaliencyClassifier>(_saliency_modality, _saliency_classifier);
+                current_surface.compute_weights<Classifier>(_saliency_modality, _saliency_classifier);
 
                 _saliency_ptcl = current_surface.getColoredWeightedCloud(_saliency_modality).makeShared();
 
@@ -462,16 +467,19 @@ private:
     std::unique_ptr<ip::workspace_t> _workspace;
 
     // Initial saliency map
+    std::string _dataset_path;
+    iagmm::TrainingData _dataset;
     std::string _classifier_path;
-    iagmm::TrainingData _saliency_dataset;
-    iagmm::NNMap _saliency_classifier;
+    Classifier _saliency_classifier;
     std::string _saliency_modality;
+    int _saliency_sample_size;
     ip::saliency_map_t _saliency_weights;
 
     // Objects
     ip::SurfaceOfInterest _surface;
     std::vector<ObjectHyp> _objects_hypotheses;
     std::string _modality;
+    int _sample_size;
     std::map<size_t, ip::saliency_map_t> _weights;
     size_t _hypothesis_id;
 
@@ -533,7 +541,9 @@ private:
         }
 
         surface.compute_feature(saliency_modality);
-        surface.compute_feature(modality);
+        if (modality != saliency_modality) {
+            surface.compute_feature(modality);
+        }
 
         return surface;
     }
@@ -577,8 +587,7 @@ private:
         }
 
         // Init classifier
-        int n_feat = surface.get_feature(max_region[0], modality).size();
-        Classifier classifier(n_feat,2);
+        Classifier classifier(_sample_size, 2);
 
         // Compute center
         Eigen::Vector4d center;

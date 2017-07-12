@@ -102,31 +102,31 @@ public:
         return my_max;
     }
 
-    void extract_arm_joints_values(){
-        std::vector<std::string> joint_names;
-        std::vector<double> joint_values;
-        joint_names = _baxter_mover->global_parameters.get_baxter_arm_joints_names();
+// Don't work with the baxter :(
+//    void extract_arm_joints_values(){
+//        std::vector<std::string> joint_names;
+//        std::vector<double> joint_values;
+//        joint_names = _baxter_mover->global_parameters.get_baxter_arm_joints_names();
 
-        for(unsigned i = 0; i < joint_names.size(); ++i){
-            joint_values.push_back(_baxter_mover->global_parameters.get_joint_state().position[distance
-                                   (_baxter_mover->global_parameters.get_joint_state().name.begin(),
-                                    find(_baxter_mover->global_parameters.get_joint_state().name.begin(),
-                                         _baxter_mover->global_parameters.get_joint_state().name.end(),
-                                         joint_names[i]))]);
-        }
-        arm_joint_values_ = joint_values;
-    }
+//        for(unsigned i = 0; i < joint_names.size(); ++i){
+//            joint_values.push_back(_baxter_mover->global_parameters.get_joint_state().position[distance
+//                                   (_baxter_mover->global_parameters.get_joint_state().name.begin(),
+//                                    find(_baxter_mover->global_parameters.get_joint_state().name.begin(),
+//                                         _baxter_mover->global_parameters.get_joint_state().name.end(),
+//                                         joint_names[i]))]);
+//        }
+//        arm_joint_values_ = joint_values;
+//    }
 
     void execute(const pose_goalGoalConstPtr& poseGoal)
     {
         ROS_INFO("CONTROLLER: Goal received trying to execute");
         /* make sure you are at home position */
-        do {
-            extract_arm_joints_values();
-            _baxter_mover->group->setJointValueTarget(_home_variable_values);
-            _baxter_mover->group->plan(_group_plan);
-            _baxter_mover->group->execute(_group_plan);
-        } while (largest_difference(arm_joint_values_, home_values_) > 0.2);
+        _baxter_mover->group->setJointValueTarget(_home_variable_values);
+        _baxter_mover->group->plan(_group_plan);
+        _baxter_mover->group->execute(_group_plan);
+
+        usleep(1e6);
 
         double signe = 0.0;
         if (poseGoal->target_pose[1] > 0) {
@@ -138,13 +138,22 @@ public:
 
         double theta = _uniform(_re);
 
+
         /* first trajectory */
         ROS_INFO_STREAM("CONTROLLER_NODE : first trajectory");
 
+//        _baxter_mover->group->setPositionTarget(
+//            poseGoal->target_pose[0] - signe*cos(theta)*0.05,
+//            poseGoal->target_pose[1] - signe*sin(theta)*0.05,
+//            poseGoal->target_pose[2] + 0.2
+//        );
+//        _baxter_mover->group->plan(_group_plan);
+//        _baxter_mover->group->execute(_group_plan);
+
         geometry_msgs::Pose first_pose;
 
-        first_pose.position.x = poseGoal->target_pose[0] - signe*cos(theta)*0.1;
-        first_pose.position.y = poseGoal->target_pose[1] - signe*sin(theta)*0.1;
+        first_pose.position.x = poseGoal->target_pose[0] - signe*cos(theta)*0.05;
+        first_pose.position.y = poseGoal->target_pose[1] - signe*sin(theta)*0.05;
         first_pose.position.z = poseGoal->target_pose[2];
         first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, M_PI, 0.0);
 
@@ -177,15 +186,21 @@ public:
         _baxter_mover->group->execute(touch_plan);
         _touch_object_success = true;
 
-        /* return to home position */
-        do {
-            extract_arm_joints_values();
-            _baxter_mover->group->setJointValueTarget(_home_variable_values);
-            _baxter_mover->group->plan(_group_plan);
-            _baxter_mover->group->execute(_group_plan);
-        } while (largest_difference(arm_joint_values_, home_values_) > 0.2);
+//        _baxter_mover->group->setPositionTarget(
+//            poseGoal->target_pose[0] + signe*cos(theta)*0.05,
+//            poseGoal->target_pose[1] + signe*sin(theta)*0.05,
+//            poseGoal->target_pose[2] + 0.2
+//        );
+//        _baxter_mover->group->plan(_group_plan);
+//        _baxter_mover->group->execute(_group_plan);
 
-        usleep(2e6);
+
+        /* return to home position */
+        _baxter_mover->group->setJointValueTarget(_home_variable_values);
+        _baxter_mover->group->plan(_group_plan);
+        _baxter_mover->group->execute(_group_plan);
+
+        usleep(1e6);
 
         if(_touch_object_success){
             ROS_INFO_STREAM("CONTROLLER_NODE : The motion was successful !!");
