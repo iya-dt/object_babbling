@@ -5,10 +5,14 @@ data_structure:
   rgb:  "rgb.yml"
   motion:  "motion_rects.yml"
   joints_values:  "controller_feedback.yml"
+  dataset_file:  "dataset.yml"
+  gmm_archive_file: "gmm_archive"
 topics:
   data:
     motion: "/object_babbling/motion_detector_node"
     joints_values: "/object_babbling/controller_node/controller_node/feedback"
+    dataset_colorH: "/object_babbling/babbling_node/dataset"
+    gmm_archive_colorH: "/object_babbling/babbling_node/gmm"
   servers:
     controller_server: "controller_node"
     database_server: "/object_babbling/db_manager_node"
