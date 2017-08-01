@@ -4,6 +4,8 @@
 
 #include "data/data_controller_feedback.hpp"
 #include "data/data_motion_rgbd.hpp"
+#include <data/data_dataset.hpp>
+#include <data/data_gmm.hpp>
 
 #include "globals.h"
 
@@ -35,13 +37,29 @@ int main(int argc, char** argv)
 
     db_manager.find_wave_by_name("/object_babbling/babbling", wave_3);
 
+    std::vector<std::string> string_split;
+    std::map<std::string,std::unique_ptr<ManagerQueue<DataDataset>>> dataset_managers;
+    std::map<std::string,std::unique_ptr<ManagerQueue<DataGMM>>> gmm_managers;
+    for(const auto& topic : wave_3->data_topics) {
+        boost::algorithm::split(string_split,topic.first,boost::is_any_of("_"));
+        if(string_split[0] == "dataset")
+            dataset_managers.emplace(topic.first,std::unique_ptr<ManagerQueue<DataDataset>>(
+                                         new ManagerQueue<DataDataset>));
+        else if(string_split[0] == "gmm")
+            gmm_managers.emplace(topic.first,std::unique_ptr<ManagerQueue<DataGMM>>(
+                                     new ManagerQueue<DataGMM>));
+    }
+
     std::unique_ptr<ManagerQueue<DataController>> controller_manager{new ManagerQueue<DataController>()};
     std::unique_ptr<ManagerQueue<DataMotionRGBD>> motion_rgbd_manager{new ManagerQueue<DataMotionRGBD>()};
-
-    for(const auto& topic : wave_3->data_topics)
-        ROS_INFO_STREAM(topic.first << ": " << topic.second);
-
     if (wave_3 != nullptr) {
+        for(auto& manager : dataset_managers){
+            wave_3->add_manager(manager.second.release(), wave_3->data_topics[manager.first]);
+        }
+        for(auto& manager : gmm_managers){
+            wave_3->add_manager(manager.second.release(), wave_3->data_topics[manager.first]);
+        }
+
         wave_3->add_manager(motion_rgbd_manager.release(), wave_3->data_topics["motion"]);
         wave_3->add_manager(controller_manager.release(), wave_3->data_topics["joints_values"]);
     }

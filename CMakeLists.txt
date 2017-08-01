@@ -91,6 +91,8 @@ add_message_files(
   joints_values.msg
   motion_rect.msg
   sv_feature.msg
+  dataset.msg
+  gmm_archive.msg
 )
 
 ## Generate services in the 'srv' folder

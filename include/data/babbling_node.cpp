@@ -169,11 +169,13 @@ public:
         );
 
         //Publishers to send the GMM Classifier archive to the data manager node
-        _classifier_pub.reset(
+        _classifier_pub.emplace(
             new Publisher(ros_nh->advertise<gmm_archive>(
                 glob_params["classifier_topic"], 10)
             )
         );
+
+
 
         //DB Manager client
         _db_request_publisher.reset(
@@ -776,18 +778,17 @@ private:
 
         // send additional data like classifier
 
-        Classifier classifier = _objects_hypotheses[_hypothesis_id].get_classifier();
-        if (classifier.dataset_size() != 0){
+        if (_objects_hypotheses[_hypothesis_id].dataset_size() != 0){
             _dataset_pub->publish(
                 _training_data_to_ros_msg(
                     _modality,
-                    classifier.get_samples()
+                    _objects_hypotheses[_hypothesis_id].get_samples()
                 )
             );
 
             std::stringstream sstream;
             boost::archive::text_oarchive oarch(sstream);
-            oarch << classifier;
+            oarch << classifier.second;
             object_babbling::gmm_archive msg;
             msg.archive.data = sstream.str();
             msg.type.data = _modality;
@@ -875,27 +876,6 @@ private:
         grid.setLeafSize(static_cast<float>(leaf_size), static_cast<float>(leaf_size), static_cast<float>(leaf_size));
         grid.setInputCloud(cloud);
         grid.filter(result);
-    }
-
-    dataset _training_data_to_ros_msg(const std::string& type, const iagmm::TrainingData& tr_data)
-    {
-        dataset dataset_msg;
-        sv_feature temp_feature;
-
-        dataset_msg.type.data = type;
-
-        iagmm::TrainingData::data_t dataset = tr_data.get();
-        std::vector<double> data_vct(dataset[0].second.rows());
-        for (const auto& data : dataset) {
-
-            for(int i = 0; i < data.second.rows(); i++)
-                data_vct[i] = data.second(i);
-            temp_feature.feature = data_vct;
-            temp_feature.label = data.first;
-
-            dataset_msg.features.push_back(temp_feature);
-        }
-        return dataset_msg;
     }
 
     iagmm::TrainingData load_dataset(const std::string& filename)
