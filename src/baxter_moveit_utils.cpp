@@ -118,15 +118,28 @@ public:
 //        arm_joint_values_ = joint_values;
 //    }
 
+    bool home_position()
+    {
+      if (_baxter_mover->group->setJointValueTarget(_home_variable_values)) {
+          if (_baxter_mover->group->plan(_group_plan)) {
+              if (_baxter_mover->group->execute(_group_plan)) {
+                  usleep(1e6);
+                  return true;
+              }
+          }
+      }
+
+      usleep(1e6);
+      return false;
+    }
+
     void execute(const pose_goalGoalConstPtr& poseGoal)
     {
         ROS_INFO("CONTROLLER: Goal received trying to execute");
         /* make sure you are at home position */
-        _baxter_mover->group->setJointValueTarget(_home_variable_values);
-        _baxter_mover->group->plan(_group_plan);
-        _baxter_mover->group->execute(_group_plan);
-
-        usleep(1e6);
+        while (!home_position()) {
+          ROS_INFO("CONTROLLER: failed to go home");
+        }
 
         double signe = 0.0;
         if (poseGoal->target_pose[1] > 0) {
@@ -196,11 +209,9 @@ public:
 
 
         /* return to home position */
-        _baxter_mover->group->setJointValueTarget(_home_variable_values);
-        _baxter_mover->group->plan(_group_plan);
-        _baxter_mover->group->execute(_group_plan);
-
-        usleep(1e6);
+        while (!home_position()) {
+          ROS_INFO("CONTROLLER: failed to go home");
+        }
 
         if(_touch_object_success){
             ROS_INFO_STREAM("CONTROLLER_NODE : The motion was successful !!");
