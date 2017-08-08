@@ -11,8 +11,8 @@ topics:
   data:
     motion: "/object_babbling/motion_detector_node"
     joints_values: "/object_babbling/controller_node/controller_node/feedback"
-    dataset_colorH: "/object_babbling/babbling_node/dataset"
-    gmm_archive_colorH: "/object_babbling/babbling_node/gmm"
+    dataset: "/object_babbling/babbling_node/dataset"
+    classifier: "/object_babbling/babbling_node/classifier"
   servers:
     controller_server: "controller_node"
     database_server: "/object_babbling/db_manager_node"

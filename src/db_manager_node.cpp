@@ -45,7 +45,7 @@ public:
             if(string_split[0] == "dataset")
                 dataset_managers.emplace(topic.first,std::unique_ptr<ManagerQueue<DataDataset>>(
                                              new ManagerQueue<DataDataset>));
-            else if(string_split[0] == "gmm")
+            else if(string_split[0] == "classifier")
                 gmm_managers.emplace(topic.first,std::unique_ptr<ManagerQueue<DataGMM>>(
                                          new ManagerQueue<DataGMM>));
         }
