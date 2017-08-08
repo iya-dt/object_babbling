@@ -19,7 +19,7 @@ public:
     void init(){
         client_connect_to_ros();
 
-        while(!add_wave("/dream_babbling/babbling")){
+        while(!add_wave("/object_babbling/babbling")){
             spin();
             update();
             sleep();
