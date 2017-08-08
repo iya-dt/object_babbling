@@ -43,6 +43,16 @@ public:
         ROS_INFO_STREAM("CONTROLLER : Global parameters retrieved:" << std::endl << display_params.str());
         ROS_INFO_STREAM("CONTROLLER : node name space is: " << cafer_core::ros_nh->getNamespace());
 
+        XmlRpc::XmlRpcValue wks;
+        cafer_core::ros_nh->getParamCached("/object_babbling/controller_node/experiment/workspace/csg_intersect_cuboid", wks);
+
+        _wks_center_x = static_cast<double>(wks["x_max"]) + static_cast<double>(wks["x_min"]);
+        _wks_center_x /= 2;
+        _wks_center_y = static_cast<double>(wks["y_max"]) + static_cast<double>(wks["y_min"]);
+        _wks_center_y /= 2;
+
+        ROS_INFO_STREAM("CONTROLLER : workspace center is (" << _wks_center_x << ", " << _wks_center_y << ")";
+
         _serv.reset(new actionlib::SimpleActionServer<pose_goalAction>(*cafer_core::ros_nh, glob_params["controller_server"],
                     boost::bind(&Controller::execute, this, _1),false));
         _baxter_mover.reset(new baxter_mover::BAXTER_Mover(*cafer_core::ros_nh));
@@ -67,7 +77,7 @@ public:
 
         home_values_ = {1.5, -1.2 -1.0, 1.5, 0.4, 1.5, 1.02};
 
-        _uniform = std::uniform_real_distribution<double>(M_PI/4, 3*M_PI/4);
+        _uniform = std::uniform_real_distribution<double>(0, M_PI/4);
 
         ros::AsyncSpinner my_spinner(4);
         my_spinner.start();
@@ -141,12 +151,20 @@ public:
           ROS_INFO("CONTROLLER: failed to go home");
         }
 
-        double signe = 0.0;
-        if (poseGoal->target_pose[1] > 0) {
-            signe = -1.0;
+        double left_right = 0.0;
+        if (poseGoal->target_pose[1] > _wks_center_x) {
+            left_right = -1.0;
         }
         else {
-            signe = +1.0;
+            left_right = +1.0;
+        }
+
+        double top_bottom = 0.0;
+        if (poseGoal->target_pose[1] > _wks_center_y) {
+            top_bottom = -1.0;
+        }
+        else {
+            top_bottom = +1.0;
         }
 
         double theta = _uniform(_re);
@@ -165,8 +183,8 @@ public:
 
         geometry_msgs::Pose first_pose;
 
-        first_pose.position.x = poseGoal->target_pose[0] - signe*cos(theta)*0.05;
-        first_pose.position.y = poseGoal->target_pose[1] - signe*sin(theta)*0.05;
+        first_pose.position.x = poseGoal->target_pose[0] - left_right*cos(top_bottom*theta)*0.05;
+        first_pose.position.y = poseGoal->target_pose[1] - left_right*sin(top_bottom*theta)*0.05;
         first_pose.position.z = poseGoal->target_pose[2];
         first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, M_PI, 0.0);
 
@@ -183,8 +201,8 @@ public:
         geometry_msgs::Pose final_pose;
         moveit_msgs::RobotTrajectory pushing_trajectory;
 
-        final_pose.position.x = poseGoal->target_pose[0] + signe*cos(theta)*0.05;
-        final_pose.position.y = poseGoal->target_pose[1] + signe*sin(theta)*0.05;
+        final_pose.position.x = poseGoal->target_pose[0] + left_right*cos(top_bottom*theta)*0.05;
+        final_pose.position.y = poseGoal->target_pose[1] + left_right*sin(top_bottom*theta)*0.05;
         final_pose.position.z = poseGoal->target_pose[2];
         final_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, M_PI, 0.0);
 
@@ -248,6 +266,9 @@ private:
 
     std::uniform_real_distribution<double> _uniform;
     std::default_random_engine _re;
+
+    double _wks_center_x = 0;
+    double _wks_center_y = 0;
 };
 
 std::string parse_arg(int& argc, char **& argv, const std::string& default_val)
