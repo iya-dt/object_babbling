@@ -102,7 +102,8 @@ public:
         _modality = static_cast<std::string>(exp_params["modality"]);
         _sample_size = static_cast<int>(exp_params["sample_size"]);
 
-        _nb_iter = static_cast<int>(exp_params["number_of_iteration"]);
+        _nb_iter = static_cast<int>(exp_params["number_of_iterations"]);
+        _nb_samples = static_cast<int>(exp_params["number_of_samples"]);
 
         _client_controller.reset(
                 new actionlib::SimpleActionClient<pose_goalAction>("controller_node/"+static_cast<std::string>(glob_params["controller_server"]), false));
@@ -530,6 +531,7 @@ private:
 
     int _counter_iter;
     int _nb_iter;
+    int _nb_samples;
 
     ip::SurfaceOfInterest _extract_surface(const std::string& saliency_modality, const std::string& modality)
     {
@@ -641,7 +643,7 @@ private:
         std::vector<double> initial_noise_covariance = std::vector<double>(6, 0.00001);
         std::vector<double> default_initial_mean = std::vector<double>(6, 0.0);
 
-        _tracker.reset(new KLDAdaptiveParticleFilterOMPTracker<ip::PointT, ParticleXYZRPY>(16));
+        _tracker.reset(new KLDAdaptiveParticleFilterOMPTracker<ip::PointT, ParticleXYZRPY>(30));
 
         ParticleXYZRPY bin_size;
         bin_size.x = 0.1f;
@@ -855,7 +857,7 @@ private:
     bool _bored(ObjectHyp& object)
     {
         int nb_s = object.get_classifier().dataset_size();
-        return nb_s > 500;
+        return nb_s > _nb_samples;
     }
 
     void _update_workspace()

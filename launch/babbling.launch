@@ -8,8 +8,8 @@
     <!--/CAFER-->
 
     <rosparam command="load" file="$(find object_babbling)/launch/params/global_params.yml"/>
-    <!-- <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" output="screen"> -->
-    <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" output="screen" launch-prefix="xterm -e gdb --args">
+    <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" output="screen" launch-prefix="xterm -e">
+    <!-- <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" output="screen" launch-prefix="xterm -e gdb --args"> -->
         <rosparam ns="cafer" subst_value="True">
             mgmt: "/management_topic"
             freq: 30.0

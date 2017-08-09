@@ -4,7 +4,8 @@ classifier_modality: "colorLabNormalHist"
 classifier_sample_size: 30
 modality: "colorLabNormalHist"
 sample_size: 30
-number_of_iteration: 100
+number_of_iterations: 100
+number_of_samples: 3000
 sv:
   use_transform: false
   voxel_resolution: 0.008

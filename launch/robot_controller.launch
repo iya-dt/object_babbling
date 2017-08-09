@@ -22,7 +22,7 @@
 
     <rosparam command="load" file="$(find object_babbling)/launch/params/planner_params.yml" ns="/object_babbling/controller_node/planner_parameters"/>
 
-    <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" output="screen">
+    <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" output="screen" launch-prefix="xterm -e">
     <!-- <node name="$(arg exec_name)" pkg="object_babbling" type="$(arg exec_name)" output="screen" launch-prefix="xterm -e gdb -args"> -->
         <rosparam ns="cafer" subst_value="True">
             mgmt: "/management_topic"
