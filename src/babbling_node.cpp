@@ -340,7 +340,7 @@ public:
             if(!_objects_hypotheses[_hypothesis_id].set_initial(_surface)) {
                 ROS_ERROR_STREAM("BABBLING_NODE : failed to set object's initial surface");
 
-                _objects_hypotheses[_hypothesis_id].recover_center(_surface);
+                // _objects_hypotheses[_hypothesis_id].recover_center(_surface);
                 return;
             }
 
@@ -384,7 +384,7 @@ public:
                 if(!_objects_hypotheses[_hypothesis_id].set_current(current_surface, _tracked_transformation)) {
                     ROS_ERROR_STREAM("BABBLING_NODE : model was not updated");
 
-                    _objects_hypotheses[_hypothesis_id].recover_center(current_surface);
+                    // _objects_hypotheses[_hypothesis_id].recover_center(current_surface);
                 }
 
                 _result_ptcl = _objects_hypotheses[_hypothesis_id].get_result_cloud();
