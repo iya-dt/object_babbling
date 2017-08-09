@@ -210,7 +210,7 @@ public:
         waypoints.push_back(first_pose);
         waypoints.push_back(final_pose);
 
-        _touch_object_success &= _baxter_mover->group->computeCartesianPath(waypoints, 0.025, 0.0, pushing_trajectory, false);
+        _baxter_mover->group->computeCartesianPath(waypoints, 0.025, 0.0, pushing_trajectory, false);
         moveit::planning_interface::MoveGroup::Plan touch_plan;
         touch_plan.trajectory_ = pushing_trajectory;
         _touch_object_success &= _baxter_mover->group->execute(touch_plan);
