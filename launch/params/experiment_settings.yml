@@ -5,7 +5,7 @@ classifier_sample_size: 30
 modality: "colorLabNormalHist"
 sample_size: 30
 number_of_iterations: 100
-number_of_samples: 3000
+number_of_samples: 1000
 sv:
   use_transform: false
   voxel_resolution: 0.008
@@ -22,8 +22,8 @@ workspace:
     threshold: 0.35
   csg_intersect_cuboid:
     x_min: -0.2
-    x_max: 4.
-    y_min: -0.25
+    x_max: 0.8
+    y_min: -0.30
     y_max: 0.25
     z_min: 0.
     z_max: 1.5
