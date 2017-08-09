@@ -51,7 +51,7 @@ public:
         _wks_center_y = static_cast<double>(wks["y_max"]) + static_cast<double>(wks["y_min"]);
         _wks_center_y /= 2;
 
-        ROS_INFO_STREAM("CONTROLLER : workspace center is (" << _wks_center_x << ", " << _wks_center_y << ")";
+        ROS_INFO_STREAM("CONTROLLER : workspace center is (" << _wks_center_x << ", " << _wks_center_y << ")");
 
         _serv.reset(new actionlib::SimpleActionServer<pose_goalAction>(*cafer_core::ros_nh, glob_params["controller_server"],
                     boost::bind(&Controller::execute, this, _1),false));
@@ -92,11 +92,9 @@ public:
         //                                      << pose.pose.position.z << " "
         //                                    );
 
-        _baxter_mover->group->setJointValueTarget(_home_variable_values);
-        if(_baxter_mover->group->plan(_group_plan))
-            _baxter_mover->group->execute(_group_plan);
-
-
+        while (!home_position()) {
+          ROS_INFO("CONTROLLER: failed to go home");
+        }
     }
 
     //get largest difference between elements of two vectors
