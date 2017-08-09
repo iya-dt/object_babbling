@@ -148,12 +148,12 @@ public:
           ROS_INFO("CONTROLLER: failed to go home, retrying ...");
         }
 
-        ROS_INFO("CONTROLLER: goal received (" << poseGoal->target_pose[0] << ", "
-                                               << poseGoal->target_pose[1] << ", "
-                                               << poseGoal->target_pose[2] << "), trying to execute");
+        ROS_INFO_STREAM("CONTROLLER: goal received (" << poseGoal->target_pose[0] << ", "
+                                                      << poseGoal->target_pose[1] << ", "
+                                                      << poseGoal->target_pose[2] << "), trying to execute");
 
         // gripper orientation
-        double alpha = 3*M_PI/4;
+        double alpha = M_PI;
 
         double left_right = 0.0;
         if (poseGoal->target_pose[0] > _wks_center_x) {
@@ -183,18 +183,20 @@ public:
         first_pose.position.y = poseGoal->target_pose[1] - left_right*sin(top_bottom*theta)*0.05;
         first_pose.position.z = poseGoal->target_pose[2];
         first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, alpha, 0.0);
-        ROS_INFO_STREAM("CONTROLLER_NODE : first trajectory" << first_pose.position.x << ", "
-                                                             << first_pose.position.y << ", "
-                                                             << first_pose.position.z << ")");
+        ROS_INFO_STREAM("CONTROLLER_NODE : first trajectory " << first_pose.position.x << ", "
+                                                              << first_pose.position.y << ", "
+                                                              << first_pose.position.z << ")");
 
-        // drive closer to pose
-        first_pose_success &= _baxter_mover->group->setPositionTarget(
-          first_pose.position.x,
-          first_pose.position.y,
-          first_pose.position.z + 0.5
-        );
-        first_pose_success &= _baxter_mover->group->plan(_group_plan);
-        first_pose_success &= _baxter_mover->group->execute(_group_plan);
+//        // drive closer to pose
+//        first_pose_success &= _baxter_mover->group->setPositionTarget(
+//          first_pose.position.x,
+//          first_pose.position.y,
+//          first_pose.position.z + 0.2
+//        );
+//        first_pose_success &= _baxter_mover->group->plan(_group_plan);
+//        first_pose_success &= _baxter_mover->group->execute(_group_plan);
+
+//        usleep(1e6);
 
         // going to pose
         first_pose_success &= _baxter_mover->group->setPoseTarget(first_pose);
@@ -211,9 +213,9 @@ public:
         final_pose.position.y = poseGoal->target_pose[1] + left_right*sin(top_bottom*theta)*0.05;
         final_pose.position.z = poseGoal->target_pose[2];
         final_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, alpha, 0.0);
-        ROS_INFO_STREAM("CONTROLLER_NODE : second trajectory" << final_pose.position.x << ", "
-                                                              << final_pose.position.y << ", "
-                                                              << final_pose.position.z << ")");
+        ROS_INFO_STREAM("CONTROLLER_NODE : second trajectory " << final_pose.position.x << ", "
+                                                               << final_pose.position.y << ", "
+                                                               << final_pose.position.z << ")");
 
         moveit_msgs::RobotTrajectory pushing_trajectory;
 
@@ -227,15 +229,18 @@ public:
         touch_plan.trajectory_ = pushing_trajectory;
         final_pose_success &= _baxter_mover->group->execute(touch_plan);
 
-        // drive away from pose
-        final_pose_success &= _baxter_mover->group->setPositionTarget(
-          final_pose.position.x,
-          final_pose.position.y,
-          final_pose.position.z + 0.5
-        );
-        final_pose_success &= _baxter_mover->group->plan(_group_plan);
-        final_pose_success &= _baxter_mover->group->execute(_group_plan);
+        usleep(1e6);
 
+//        // drive away from pose
+//        final_pose_success &= _baxter_mover->group->setPositionTarget(
+//          final_pose.position.x,
+//          final_pose.position.y,
+//          final_pose.position.z + 0.2
+//        );
+//        final_pose_success &= _baxter_mover->group->plan(_group_plan);
+//        final_pose_success &= _baxter_mover->group->execute(_group_plan);
+
+//        usleep(1e6);
 
         /* return to home position */
         while (!home_position()) {
