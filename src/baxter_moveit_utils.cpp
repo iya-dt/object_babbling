@@ -131,7 +131,7 @@ public:
       if (_baxter_mover->group->setJointValueTarget(_home_variable_values)) {
           if (_baxter_mover->group->plan(_group_plan)) {
               if (_baxter_mover->group->execute(_group_plan)) {
-                  usleep(1e6);
+                  usleep(2e6);
                   return true;
               }
           }
@@ -146,7 +146,7 @@ public:
         ROS_INFO("CONTROLLER: Goal received trying to execute");
         /* make sure you are at home position */
         while (!home_position()) {
-          ROS_INFO("CONTROLLER: failed to go home");
+          ROS_INFO("CONTROLLER: failed to go home, retrying ...");
         }
 
         double left_right = 0.0;
@@ -167,6 +167,7 @@ public:
 
         double theta = _uniform(_re);
 
+        _touch_object_success = true;
 
         /* first trajectory */
         ROS_INFO_STREAM("CONTROLLER_NODE : first trajectory");
@@ -184,11 +185,11 @@ public:
         first_pose.position.x = poseGoal->target_pose[0] - left_right*cos(top_bottom*theta)*0.05;
         first_pose.position.y = poseGoal->target_pose[1] - left_right*sin(top_bottom*theta)*0.05;
         first_pose.position.z = poseGoal->target_pose[2];
-        first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, M_PI, 0.0);
+        first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 3*M_PI/4, 0.0);
 
-        _baxter_mover->group->setPoseTarget(first_pose);
-        _baxter_mover->group->plan(_group_plan);
-        _baxter_mover->group->execute(_group_plan);
+        _touch_object_success &= _baxter_mover->group->setPoseTarget(first_pose);
+        _touch_object_success &= _baxter_mover->group->plan(_group_plan);
+        _touch_object_success &= _baxter_mover->group->execute(_group_plan);
 
         usleep(1e6);
 
@@ -202,18 +203,17 @@ public:
         final_pose.position.x = poseGoal->target_pose[0] + left_right*cos(top_bottom*theta)*0.05;
         final_pose.position.y = poseGoal->target_pose[1] + left_right*sin(top_bottom*theta)*0.05;
         final_pose.position.z = poseGoal->target_pose[2];
-        final_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, M_PI, 0.0);
+        final_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 3*M_PI/4, 0.0);
 
         std::vector<geometry_msgs::Pose> waypoints;
 
         waypoints.push_back(first_pose);
         waypoints.push_back(final_pose);
 
-        _baxter_mover->group->computeCartesianPath(waypoints, 0.025, 0.0, pushing_trajectory, false);
+        _touch_object_success &= _baxter_mover->group->computeCartesianPath(waypoints, 0.025, 0.0, pushing_trajectory, false);
         moveit::planning_interface::MoveGroup::Plan touch_plan;
         touch_plan.trajectory_ = pushing_trajectory;
-        _baxter_mover->group->execute(touch_plan);
-        _touch_object_success = true;
+        _touch_object_success &= _baxter_mover->group->execute(touch_plan);
 
 //        _baxter_mover->group->setPositionTarget(
 //            poseGoal->target_pose[0] + signe*cos(theta)*0.05,
@@ -226,15 +226,15 @@ public:
 
         /* return to home position */
         while (!home_position()) {
-          ROS_INFO("CONTROLLER: failed to go home");
+          ROS_INFO("CONTROLLER: failed to go home, retrying ...");
         }
 
         if(_touch_object_success){
-            ROS_INFO_STREAM("CONTROLLER_NODE : The motion was successful !!");
+            ROS_INFO_STREAM("CONTROLLER_NODE : push succeeded");
             _serv->setSucceeded();
         }
         else{
-            ROS_WARN_STREAM("CONTROLLER_NODE : Something went wrong");
+            ROS_WARN_STREAM("CONTROLLER_NODE : push failed");
             _serv->setAborted();
         }
 
