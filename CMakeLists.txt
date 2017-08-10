@@ -208,7 +208,7 @@ add_dependencies(db_manager_node object_babbling_generate_messages_cpp ${catkin_
 target_link_libraries(motion_detector_node ${catkin_LIBRARIES} image_processing iagmm ${OpenCV_LIBRARIES} tbb)
 target_link_libraries(babbling_node ${catkin_LIBRARIES} image_processing iagmm ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} yaml-cpp.so tbb)
 target_link_libraries(db_manager_node ${catkin_LIBRARIES} ${BASE64} yaml-cpp.so)
-target_link_libraries(controller_node ${ROBOT_LIBS})
+target_link_libraries(controller_node ${catkin_LIBRARIES} ${ROBOT_LIBS})
 target_link_libraries(supervisor_node ${catkin_LIBRARIES})
 
 #############

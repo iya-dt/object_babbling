@@ -11,6 +11,7 @@
 #include <boost/archive/text_oarchive.hpp>
 
 #include <std_msgs/Bool.h>
+#include <std_msgs/Float64MultiArray.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <actionlib/client/simple_action_client.h>
 #include <yaml-cpp/yaml.h>
@@ -167,6 +168,13 @@ public:
             )
         );
 
+        // Workspace center
+        _workspace_center_pub.reset(
+            new Publisher(ros_nh->advertise<std_msgs::Float64MultiArray>(
+                glob_params["workspace_center_topic"], 10)
+            )
+        );
+
         //Publishers to send the training dataset to the data manager node
         _dataset_pub.reset(
             new Publisher(ros_nh->advertise<dataset>(
@@ -198,6 +206,7 @@ public:
         client_connect_to_ros();
 
         _update_workspace();
+        _publish_workspace_center();
 
         std::ifstream ifs(_classifier_path);
         boost::archive::text_iarchive ia(ifs);
@@ -253,6 +262,8 @@ public:
 
         _target_point_pub.reset();
         _tracked_point_pub.reset();
+
+        _workspace_center_pub.reset();
 
         _dataset_pub.reset();
         _classifier_pub.reset();
@@ -478,6 +489,8 @@ private:
 
     std::unique_ptr<Publisher> _target_point_pub;
     std::unique_ptr<Publisher> _tracked_point_pub;
+
+    std::unique_ptr<Publisher> _workspace_center_pub;
 
     std::unique_ptr<Publisher> _dataset_pub;
     std::unique_ptr<Publisher> _classifier_pub;
@@ -733,6 +746,7 @@ private:
         ip::PointCloudT::Ptr cloud = ip::PointCloudT::Ptr(new ip::PointCloudT);
         ip::PointCloudT::Ptr cloud_downsampled = ip::PointCloudT::Ptr(new ip::PointCloudT);
         pcl::fromROSMsg(ptcl_msg, *cloud);
+        _workspace->filter(cloud);
         _grid_sample_approx(cloud, *cloud_downsampled, _downsampling_grid_size);
 
         _tracker->setInputCloud(cloud_downsampled);
@@ -882,6 +896,44 @@ private:
                   static_cast<double>(wks["csg_intersect_cuboid"]["z_max"])}
                 )
         );
+    }
+
+    void _publish_workspace_center() {
+        ROS_INFO_STREAM("BABBLING_NODE : computing workspace center");
+        do {
+            _depth_msg = sensor_msgs::ImageConstPtr(new sensor_msgs::Image(_images_sub->get_depth()));
+            _rgb_msg = sensor_msgs::ImageConstPtr(new sensor_msgs::Image(_images_sub->get_rgb()));
+            _info_msg = sensor_msgs::CameraInfoConstPtr(new sensor_msgs::CameraInfo(_images_sub->get_rgb_info()));
+        } while (_rgb_msg->data.empty() || _depth_msg->data.empty());
+
+        rgbd_utils::RGBD_to_Pointcloud converter(_depth_msg, _rgb_msg, _info_msg);
+        sensor_msgs::PointCloud2 ptcl_msg = converter.get_pointcloud();
+        _workspace_ptcl = ip::PointCloudT::Ptr(new ip::PointCloudT);
+        pcl::fromROSMsg(ptcl_msg, *_workspace_ptcl);
+        _workspace->filter(_workspace_ptcl);
+
+        ip::PointT min_bound, max_bound;
+        pcl::getMinMax3D(*_workspace_ptcl, min_bound, max_bound);
+
+        Vector3d center_camera_frame;
+        center_camera_frame << (max_bound.x + min_bound.x)/2,
+                               (max_bound.y + min_bound.y)/2,
+                               (max_bound.z + min_bound.z)/2;
+
+        Vector3d center_robot_frame;
+        babbling::tf_base_conversion(center_robot_frame, center_camera_frame);
+
+        ROS_INFO_STREAM("BABBLING_NODE : sending center (" << center_robot_frame(0) << ", "
+                                                           << center_robot_frame(1) << ", "
+                                                           << center_robot_frame(2) << ")");
+
+        std_msgs::Float64MultiArray center_msg;
+        center_msg.data.resize(3);
+        center_msg.data[0] = center_robot_frame(0);
+        center_msg.data[1] = center_robot_frame(1);
+        center_msg.data[2] = center_robot_frame(2);
+
+        _workspace_center_pub->publish(center_msg);
     }
 
     void _grid_sample_approx (const ip::PointCloudT::ConstPtr &cloud, ip::PointCloudT &result, double leaf_size)

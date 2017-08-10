@@ -11,11 +11,12 @@
 #include <Eigen/Geometry>
 #include <Eigen/Dense>
 
+#include <std_msgs/Float64MultiArray.h>
 #include <actionlib/server/simple_action_server.h>
 #include <tf/transform_datatypes.h>
 #include <ros/callback_queue.h>
 #include <moveit/robot_state/conversions.h>
-#include "baxter_mover_utils/baxter_mover_utils/baxter_mover.hpp"
+#include <baxter_mover_utils/baxter_mover_utils/baxter_mover.hpp>
 #include <baxter_mover_utils/move_baxter_arm.h>
 
 #include <cafer_core/cafer_core.hpp>
@@ -23,8 +24,8 @@
 #include "object_babbling/pose_goalAction.h"
 
 
-using namespace object_babbling;
 using namespace cafer_core;
+using namespace object_babbling;
 
 class Controller: public Component{
     using Component::Component; // C++11 requirement to inherit the constructor
@@ -43,13 +44,13 @@ public:
         ROS_INFO_STREAM("CONTROLLER : Global parameters retrieved:" << std::endl << display_params.str());
         ROS_INFO_STREAM("CONTROLLER : node name space is: " << cafer_core::ros_nh->getNamespace());
 
-        XmlRpc::XmlRpcValue wks;
-        cafer_core::ros_nh->getParamCached("/object_babbling/controller_node/experiment/workspace/csg_intersect_cuboid", wks);
+        std_msgs::Float64MultiArray wks_center_msg;
+        wks_center_msg = *ros::topic::waitForMessage<std_msgs::Float64MultiArray>(
+            glob_params["workspace_center_topic"], *cafer_core::ros_nh
+        );
 
-        _wks_center_x = static_cast<double>(wks["x_max"]) + static_cast<double>(wks["x_min"]);
-        _wks_center_x /= 2;
-        _wks_center_y = static_cast<double>(wks["y_max"]) + static_cast<double>(wks["y_min"]);
-        _wks_center_y /= 2;
+        _wks_center_x = wks_center_msg.data[0];
+        _wks_center_y = wks_center_msg.data[1];
 
         ROS_INFO_STREAM("CONTROLLER : workspace center is (" << _wks_center_x << ", " << _wks_center_y << ")");
 

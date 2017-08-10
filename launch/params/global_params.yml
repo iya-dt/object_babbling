@@ -38,5 +38,7 @@ result_ptcl: "/object_babbling/babbling_node/result_ptcl"
 target_point_topic: "/object_babbling/babbling_node/target_point_topic"
 tracked_point_topic: "/object_babbling/babbling_node/tracked_point_topic"
 
+workspace_center_topic: "/object_babbling/babbling_node/workspace_center_topic"
+
 dataset_topic: "/object_babbling/babbling_node/dataset"
 classifier_topic: "/object_babbling/babbling_node/classifier"
