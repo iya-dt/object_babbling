@@ -177,46 +177,23 @@ public:
 
         _touch_object_success = true;
 
-        /* first trajectory */
         geometry_msgs::Pose first_pose;
-        bool first_pose_success = true;
         first_pose.position.x = poseGoal->target_pose[0] - left_right*cos(top_bottom*theta)*0.05;
         first_pose.position.y = poseGoal->target_pose[1] - left_right*sin(top_bottom*theta)*0.05;
         first_pose.position.z = poseGoal->target_pose[2];
         first_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, alpha, 0.0);
-        ROS_INFO_STREAM("CONTROLLER_NODE : first trajectory " << first_pose.position.x << ", "
-                                                              << first_pose.position.y << ", "
-                                                              << first_pose.position.z << ")");
+        ROS_INFO_STREAM("CONTROLLER_NODE : first point " << first_pose.position.x << ", "
+                                                         << first_pose.position.y << ", "
+                                                         << first_pose.position.z << ")");
 
-//        // drive closer to pose
-//        first_pose_success &= _baxter_mover->group->setPositionTarget(
-//          first_pose.position.x,
-//          first_pose.position.y,
-//          first_pose.position.z + 0.2
-//        );
-//        first_pose_success &= _baxter_mover->group->plan(_group_plan);
-//        first_pose_success &= _baxter_mover->group->execute(_group_plan);
-
-//        usleep(1e6);
-
-        // going to pose
-        first_pose_success &= _baxter_mover->group->setPoseTarget(first_pose);
-        first_pose_success &= _baxter_mover->group->plan(_group_plan);
-        first_pose_success &= _baxter_mover->group->execute(_group_plan);
-
-        usleep(1e6);
-
-
-        /* second trajectory */
         geometry_msgs::Pose final_pose;
-        bool final_pose_success = true;
         final_pose.position.x = poseGoal->target_pose[0] + left_right*cos(top_bottom*theta)*0.05;
         final_pose.position.y = poseGoal->target_pose[1] + left_right*sin(top_bottom*theta)*0.05;
         final_pose.position.z = poseGoal->target_pose[2];
         final_pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, alpha, 0.0);
-        ROS_INFO_STREAM("CONTROLLER_NODE : second trajectory " << final_pose.position.x << ", "
-                                                               << final_pose.position.y << ", "
-                                                               << final_pose.position.z << ")");
+        ROS_INFO_STREAM("CONTROLLER_NODE : second point " << final_pose.position.x << ", "
+                                                          << final_pose.position.y << ", "
+                                                          << final_pose.position.z << ")");
 
         moveit_msgs::RobotTrajectory pushing_trajectory;
 
@@ -225,10 +202,11 @@ public:
         waypoints.push_back(final_pose);
 
         // going to pose
-        _baxter_mover->group->computeCartesianPath(waypoints, 0.025, 0.0, pushing_trajectory, false);
+        double f = _baxter_mover->group->computeCartesianPath(waypoints, 0.025, 0.0, pushing_trajectory, false);
+        ROS_INFO_STREAM("CONTROLLER_NODE : performing " << f*100 << "% of path");
         moveit::planning_interface::MoveGroup::Plan touch_plan;
         touch_plan.trajectory_ = pushing_trajectory;
-        final_pose_success &= _baxter_mover->group->execute(touch_plan);
+        _touch_object_success &= _baxter_mover->group->execute(touch_plan);
 
         usleep(1e6);
 
@@ -248,18 +226,12 @@ public:
           ROS_INFO("CONTROLLER: failed to go home, retrying ...");
         }
 
-        _touch_object_success = first_pose_success && final_pose_success;
         if(_touch_object_success){
             ROS_INFO_STREAM("CONTROLLER_NODE : push succeeded");
             _serv->setSucceeded();
         }
         else{
-            if (!first_pose_success) {
-                ROS_WARN_STREAM("CONTROLLER_NODE : push failed (first pose)");
-            }
-            else if (!final_pose_success) {
-                ROS_WARN_STREAM("CONTROLLER_NODE : push failed (final pose)");
-            }
+            ROS_WARN_STREAM("CONTROLLER_NODE : push failed");
             _serv->setAborted();
         }
 
