@@ -59,6 +59,8 @@ public:
             wave_3->add_manager(motion_rgbd_manager.release(), wave_3->data_topics["motion"]);
             wave_3->add_manager(controller_manager.release(), wave_3->data_topics["joints_values"]);
         }
+
+        return true;
     }
 
     void update(){
