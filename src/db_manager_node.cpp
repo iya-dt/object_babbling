@@ -1,11 +1,9 @@
-#include <boost/algorithm/string.hpp>
-
 #include <cafer_core/cafer_core.hpp>
 
 #include "data/data_controller_feedback.hpp"
 #include "data/data_motion_rgbd.hpp"
-#include <data/data_dataset.hpp>
-#include <data/data_gmm.hpp>
+#include "data/data_dataset.hpp"
+#include "data/data_gmm.hpp"
 
 #include "globals.h"
 
@@ -37,15 +35,13 @@ public:
 
         shared_ptr<DatabaseManager::_Wave> wave_3(it->second);
 
-        std::vector<std::string> string_split;
         std::map<std::string,std::unique_ptr<ManagerQueue<DataDataset>>> dataset_managers;
         std::map<std::string,std::unique_ptr<ManagerQueue<DataGMM>>> gmm_managers;
         for(const auto& topic : wave_3->data_topics) {
-            boost::algorithm::split(string_split,topic.first,boost::is_any_of("_"));
-            if(string_split[0] == "dataset")
+            if(topic.first == "dataset")
                 dataset_managers.emplace(topic.first,std::unique_ptr<ManagerQueue<DataDataset>>(
                                              new ManagerQueue<DataDataset>));
-            else if(string_split[0] == "classifier")
+            else if(topic.first == "classifier")
                 gmm_managers.emplace(topic.first,std::unique_ptr<ManagerQueue<DataGMM>>(
                                          new ManagerQueue<DataGMM>));
         }
