@@ -1,5 +1,11 @@
-classifier_path: "/home/jonathan/Documents/STA3/crusty_babbling/iteration_72/dataset_normal.yml"
-number_of_iteration: 100
+dataset_path: "/home/mukhtar/babbling_colorLabNormalHist_20170807/iteration_100/dataset_colorLabNormalHist.yml"
+classifier_path: "/home/mukhtar/babbling_colorLabNormalHist_20170807/iteration_100/gmm_archive_colorLabNormalHist"
+classifier_modality: "colorLabNormalHist"
+classifier_sample_size: 30
+modality: "colorLabNormalHist"
+sample_size: 30
+number_of_iterations: 100
+number_of_samples: 1000
 sv:
   use_transform: false
   voxel_resolution: 0.008
@@ -9,15 +15,15 @@ sv:
   seed_resolution: 0.05
 workspace:
   sphere:
-    x: 0.065
-    y: -0.05
-    z: 1.1
-    radius: 0.6
-    threshold: 0.0
+    x: 0.
+    y: 0.
+    z: 1.
+    radius: 3.
+    threshold: 0.35
   csg_intersect_cuboid:
-    x_min: -0.34
-    x_max: 0.36
-    y_min: 0.11
-    y_max: 0.35
-    z_min: -0.2
+    x_min: -0.2
+    x_max: 0.8
+    y_min: -0.30
+    y_max: 0.25
+    z_min: 0.
     z_max: 1.5

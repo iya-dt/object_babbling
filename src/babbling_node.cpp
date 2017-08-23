@@ -11,6 +11,7 @@
 #include <boost/archive/text_oarchive.hpp>
 
 #include <std_msgs/Bool.h>
+#include <std_msgs/Float64MultiArray.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <actionlib/client/simple_action_client.h>
 #include <yaml-cpp/yaml.h>
@@ -30,7 +31,6 @@
 // #include <pcl/tracking/normal_coherence.h>
 #include <pcl/tracking/approx_nearest_pair_point_cloud_coherence.h>
 #include <pcl/tracking/nearest_pair_point_cloud_coherence.h>
-#include <pcl/registration/correspondence_rejection_sample_consensus.h>
 #include <pcl/filters/extract_indices.h>
 
 #include <rgbd_utils/rgbd_subscriber.hpp>
@@ -72,7 +72,6 @@ class Babbling : public Component {
 public:
 
     typedef iagmm::GMM Classifier;
-    typedef iagmm::NNMap SaliencyClassifier;
     typedef ip::Object<Classifier> ObjectHyp;
 
     ~Babbling()
@@ -96,14 +95,23 @@ public:
 
         ROS_INFO_STREAM("BABBLING_NODE : global parameters retrieved:" << std::endl << display_params.str());
 
-        _nb_iter = static_cast<int>(exp_params["number_of_iteration"]);
+        _dataset_path = static_cast<std::string>(exp_params["dataset_path"]);
         _classifier_path = static_cast<std::string>(exp_params["classifier_path"]);
+        _saliency_modality = static_cast<std::string>(exp_params["classifier_modality"]);
+        _saliency_sample_size = static_cast<int>(exp_params["classifier_sample_size"]);
+
+        _modality = static_cast<std::string>(exp_params["modality"]);
+        _sample_size = static_cast<int>(exp_params["sample_size"]);
+
+        _nb_iter = static_cast<int>(exp_params["number_of_iterations"]);
+        _nb_samples = static_cast<int>(exp_params["number_of_samples"]);
 
         _client_controller.reset(
                 new actionlib::SimpleActionClient<pose_goalAction>("controller_node/"+static_cast<std::string>(glob_params["controller_server"]), false));
 
         _client_motion.reset(
                 new ros::ServiceClient(ros_nh->serviceClient<is_moving>(glob_params["motion_detector_service"])));
+
 
         // Images
         _images_sub.reset(
@@ -160,6 +168,27 @@ public:
             )
         );
 
+        // Workspace center
+        _workspace_center_pub.reset(
+            new Publisher(ros_nh->advertise<std_msgs::Float64MultiArray>(
+                glob_params["workspace_center_topic"], 10)
+            )
+        );
+
+        //Publishers to send the training dataset to the data manager node
+        _dataset_pub.reset(
+            new Publisher(ros_nh->advertise<dataset>(
+                glob_params["dataset_topic"], 10)
+            )
+        );
+
+        //Publishers to send the GMM Classifier archive to the data manager node
+        _classifier_pub.reset(
+            new Publisher(ros_nh->advertise<gmm_archive>(
+                glob_params["classifier_topic"], 10)
+            )
+        );
+
         //DB Manager client
         _db_request_publisher.reset(
             new Publisher(ros_nh->advertise<cafer_core::DBManager>(
@@ -177,13 +206,14 @@ public:
         client_connect_to_ros();
 
         _update_workspace();
+        _publish_workspace_center();
 
-        _saliency_dataset = load_dataset(_classifier_path);
-        _saliency_classifier = SaliencyClassifier(3, 2, 0.3, 0.05);
-        _saliency_classifier.set_samples(_saliency_dataset);
-        _saliency_modality = "normal";
+        std::ifstream ifs(_classifier_path);
+        boost::archive::text_iarchive ia(ifs);
+        ia >> _saliency_classifier;
 
-        _modality = "fpfh";
+        _dataset = load_dataset(_dataset_path);
+        _saliency_classifier.set_samples(_dataset);
 
         _target_center << 0.0, 0.0, 0.0, 0.0;
         _tracked_center << 0.0, 0.0, 0.0, 0.0;
@@ -198,6 +228,8 @@ public:
         _clouds_ready = false;
 
         _counter_iter = 0;
+
+        usleep(1e6);
     }
 
     void client_disconnect_from_ros() override
@@ -231,6 +263,11 @@ public:
         _target_point_pub.reset();
         _tracked_point_pub.reset();
 
+        _workspace_center_pub.reset();
+
+        _dataset_pub.reset();
+        _classifier_pub.reset();
+
         _db_request_publisher.reset();
         _db_status_subscriber.reset();
     }
@@ -240,128 +277,147 @@ public:
         std::string supervisor_name =
             ros::names::parentNamespace(cafer_core::ros_nh->getNamespace()) + "/babbling";
 
-        if (_db_init) {
-            if (_db_ready && !_recording) {
-                ip::PointCloudXYZ point_tracked;
-                sensor_msgs::PointCloud2 point_tracked_msg;
-                pcl::toROSMsg(point_tracked, point_tracked_msg);
-                point_tracked_msg.header = _images_sub->get_depth().header;
-                _tracked_point_pub->publish(point_tracked_msg);
+        // Image
+        _depth_msg = sensor_msgs::ImageConstPtr(new sensor_msgs::Image(_images_sub->get_depth()));
+        _rgb_msg = sensor_msgs::ImageConstPtr(new sensor_msgs::Image(_images_sub->get_rgb()));
+        _info_msg = sensor_msgs::CameraInfoConstPtr(new sensor_msgs::CameraInfo(_images_sub->get_rgb_info()));
 
-                sensor_msgs::PointCloud2 tracked_ptcl_msg;
-                pcl::toROSMsg(*_tracked_ptcl, tracked_ptcl_msg);
-                tracked_ptcl_msg.header = _images_sub->get_depth().header;
-                _tracked_ptcl_pub->publish(tracked_ptcl_msg);
+        if (_rgb_msg->data.empty() || _depth_msg->data.empty()) {
+            return;
+        }
 
-                ROS_WARN_STREAM("BABBLING_NODE : BEGIN ITERATION " << _counter_iter
-                                << " (" << _objects_hypotheses.size() << " hypotheses availables)");
-                // Initialize the iteration
-                _surface = _extract_surface(_saliency_modality, _modality);
+        if (!_db_init) {
+            ROS_INFO_STREAM("BABBLING_NODE : waiting for db manager");
+            return;
+        }
 
-                _surface.init_weights(_saliency_modality, 0.5);
-                _surface.compute_weights<SaliencyClassifier>(_saliency_modality, _saliency_classifier);
+        if (_db_ready && !_recording) {
+            ip::PointCloudXYZ point_tracked;
+            sensor_msgs::PointCloud2 point_tracked_msg;
+            pcl::toROSMsg(point_tracked, point_tracked_msg);
+            point_tracked_msg.header = _images_sub->get_depth().header;
+            _tracked_point_pub->publish(point_tracked_msg);
 
-                if (_create_new_hypothesis) {
-                    ROS_WARN_STREAM("BABBLING_NODE : creating new hypothesis");
+            sensor_msgs::PointCloud2 tracked_ptcl_msg;
+            pcl::toROSMsg(*_tracked_ptcl, tracked_ptcl_msg);
+            tracked_ptcl_msg.header = _images_sub->get_depth().header;
+            _tracked_ptcl_pub->publish(tracked_ptcl_msg);
 
-                    ObjectHyp new_hyp = _new_hypothesis(
-                        _surface,
-                        _saliency_modality,
-                        _modality
-                    );
-                    _objects_hypotheses.push_back(new_hyp);
+            ROS_WARN_STREAM("BABBLING_NODE : BEGIN ITERATION " << _counter_iter
+                            << " (" << _objects_hypotheses.size() << " hypotheses availables)");
+            // Initialize the iteration
+            _surface = _extract_surface(_saliency_modality, _modality);
 
-                    _hypothesis_id = _objects_hypotheses.size() - 1;
+            _surface.init_weights(_saliency_modality, 0.5);
+            _surface.compute_weights<Classifier>(_saliency_modality, _saliency_classifier);
 
-                    _create_new_hypothesis = false;
-                }
-                else {
-                    int nb_s = _objects_hypotheses[_hypothesis_id].get_classifier().dataset_size();
-                    ROS_WARN_STREAM("BABBLING_NODE : improving hypothesis " << _hypothesis_id
-                                    << " (" << nb_s <<" samples availables)");
+            if (_create_new_hypothesis) {
+                ROS_WARN_STREAM("BABBLING_NODE : creating new hypothesis");
 
-                }
-
-                // Feedback information
-                _saliency_weights = _surface.get_weights()[_saliency_modality];
-                _weights = _compute_object_weights(
+                ObjectHyp new_hyp = _new_hypothesis(
                     _surface,
-                    _objects_hypotheses
+                    _saliency_modality,
+                    _modality
                 );
+                _objects_hypotheses.push_back(new_hyp);
 
-                _saliency_ptcl = _surface.getColoredWeightedCloud(_saliency_modality).makeShared();
-                _object_saliency_ptcl = _surface.getColoredWeightedCloud(_weights[_hypothesis_id]).makeShared();
-                _clouds_ready = true;
+                _hypothesis_id = _objects_hypotheses.size() - 1;
 
-                publish_feedback();
-
-                _start_db_recording();
+                _create_new_hypothesis = false;
+            }
+            else {
+                int nb_s = _objects_hypotheses[_hypothesis_id].get_classifier().dataset_size();
+                ROS_WARN_STREAM("BABBLING_NODE : improving hypothesis " << _hypothesis_id
+                                << " (" << nb_s <<" samples availables)");
             }
 
-            if (_robot_controller_ready && _recording) {
-                _objects_hypotheses[_hypothesis_id].set_initial(_surface);
+            // Feedback information
+            _saliency_weights = _surface.get_weights()[_saliency_modality];
+            _weights = _compute_object_weights(
+                _surface,
+                _objects_hypotheses
+            );
 
-                _target_ptcl = _objects_hypotheses[_hypothesis_id].get_initial_cloud();
-                ROS_INFO_STREAM("BABBLING_NODE : target cloud size " << _target_ptcl->size());
-                pcl::compute3DCentroid<ip::PointT>(*_target_ptcl, _target_center);
+            _saliency_ptcl = _surface.getColoredWeightedCloud(_saliency_modality).makeShared();
+            _object_saliency_ptcl = _surface.getColoredWeightedCloud(_weights[_hypothesis_id]).makeShared();
+            _clouds_ready = true;
 
-                if (_target_ptcl->size() == 0){
-                    ROS_ERROR_STREAM("BABBLING_NODE : empty target cloud :(");
-                    throw std::runtime_error("BABBLING_NODE : empty target cloud :(");
-                }
+            publish_feedback();
 
-                // Choosing an action
-                Vector3d target_center_camera;
-                target_center_camera << _target_center(0), _target_center(1), _target_center(2);
-                Vector3d target_center_robot;
-                babbling::tf_base_conversion(target_center_robot, target_center_camera);
+            _start_db_recording();
+        }
 
-                pose_goalGoal poseGoal;
-                poseGoal.target_pose.resize(3);
-                poseGoal.target_pose[0] = target_center_robot(0);
-                poseGoal.target_pose[1] = target_center_robot(1);
-                poseGoal.target_pose[2] = target_center_robot(2);
+        if (_robot_controller_ready && _recording) {
+            if(!_objects_hypotheses[_hypothesis_id].set_initial(_surface)) {
+                ROS_ERROR_STREAM("BABBLING_NODE : failed to set object's initial surface");
 
-                ROS_INFO_STREAM("BABBLING_NODE : going to pose "
-                    << poseGoal.target_pose[0] << " "
-                    << poseGoal.target_pose[1] << " "
-                    << poseGoal.target_pose[2]);
-
-                _start_tracking();
-
-                _client_controller->sendGoal(poseGoal);
-                _robot_controller_ready = false;
+                // _objects_hypotheses[_hypothesis_id].recover_center(_surface);
+                return;
             }
 
-            if (!_robot_controller_ready) {
-                _client_controller->waitForResult(ros::Duration(1.0));
-                auto client_status = _client_controller->getState();
-                if (client_status == actionlib::SimpleClientGoalState::SUCCEEDED) {
-                    ROS_INFO_STREAM("BABBLING_NODE : position reached");
-                    _robot_controller_ready = true;
+            _target_ptcl = _objects_hypotheses[_hypothesis_id].get_initial_cloud();
+            _target_center = _objects_hypotheses[_hypothesis_id].get_center();
 
-                    _stop_tracking();
+            ROS_INFO_STREAM("BABBLING_NODE : target cloud size " << _target_ptcl->size());
 
-                    // Update object hypothesis
-                    ip::SurfaceOfInterest current_surface = _extract_surface(_saliency_modality, _modality);
-                    _objects_hypotheses[_hypothesis_id].set_current(current_surface, _tracked_transformation);
+            Vector3d center_camera_frame;
+            center_camera_frame << _target_center(0), _target_center(1), _target_center(2);
+            Vector3d target_center_robot;
+            babbling::tf_base_conversion(target_center_robot, center_camera_frame);
 
-                    _result_ptcl = _objects_hypotheses[_hypothesis_id].get_current_cloud();
+            pose_goalGoal poseGoal;
+            poseGoal.target_pose.resize(3);
+            poseGoal.target_pose[0] = target_center_robot(0);
+            poseGoal.target_pose[1] = target_center_robot(1);
+            poseGoal.target_pose[2] = target_center_robot(2);
 
-                    _stop_db_recording();
+            _start_tracking();
 
-                    _counter_iter += 1;
-                    ROS_INFO_STREAM("BABBLING_NODE : iteration " << _counter_iter << " done (nb_iter = " << _nb_iter << ")");
+            _client_controller->sendGoal(poseGoal);
+            _robot_controller_ready = false;
+        }
+
+        if (!_robot_controller_ready) {
+            auto client_status = _client_controller->getState();
+            if (client_status == actionlib::SimpleClientGoalState::SUCCEEDED) {
+                ROS_INFO_STREAM("BABBLING_NODE : position reached");
+                _robot_controller_ready = true;
+
+                _stop_tracking();
+
+                // Update object hypothesis
+                ip::SurfaceOfInterest current_surface = _extract_surface(_saliency_modality, _modality);
+                current_surface.init_weights(_saliency_modality, 0.5);
+                current_surface.compute_weights<Classifier>(_saliency_modality, _saliency_classifier);
+
+                _saliency_ptcl = current_surface.getColoredWeightedCloud(_saliency_modality).makeShared();
+
+                if(!_objects_hypotheses[_hypothesis_id].set_current(current_surface, _tracked_transformation)) {
+                    ROS_ERROR_STREAM("BABBLING_NODE : model was not updated");
+
+                    // _objects_hypotheses[_hypothesis_id].recover_center(current_surface);
                 }
-                else if (client_status == actionlib::SimpleClientGoalState::ABORTED) {
-                    ROS_INFO_STREAM("BABBLING_NODE : position wasn't reachable");
-                    _robot_controller_ready = true;
 
-                    _stop_tracking();
+                _result_ptcl = _objects_hypotheses[_hypothesis_id].get_result_cloud();
+                ROS_INFO_STREAM("BABBLING_NODE : result cloud size " << _result_ptcl->size());
+
+                _stop_db_recording();
+
+                if (_bored(_objects_hypotheses[_hypothesis_id])) {
+                    _create_new_hypothesis = true;
                 }
-                else {
-                    // ROS_INFO_STREAM("BABBLING_NODE : waiting for controller...");
-                }
+
+                _counter_iter += 1;
+                ROS_INFO_STREAM("BABBLING_NODE : iteration " << _counter_iter << " done (nb_iter = " << _nb_iter << ")");
+            }
+            else if (client_status == actionlib::SimpleClientGoalState::ABORTED) {
+                ROS_INFO_STREAM("BABBLING_NODE : position wasn't reachable");
+                _robot_controller_ready = true;
+
+                _stop_tracking();
+            }
+            else {
+                // ROS_INFO_STREAM("BABBLING_NODE : waiting for controller...");
             }
         }
 
@@ -419,6 +475,9 @@ private:
     std::unique_ptr<actionlib::SimpleActionClient<pose_goalAction>> _client_controller;
 
     RGBD_Subscriber::Ptr _images_sub;
+    sensor_msgs::ImageConstPtr _depth_msg;
+    sensor_msgs::ImageConstPtr _rgb_msg;
+    sensor_msgs::CameraInfoConstPtr _info_msg;
 
     std::unique_ptr<Publisher> _ptcl_pub;
     std::unique_ptr<Publisher> _saliency_ptcl_pub;
@@ -431,22 +490,30 @@ private:
     std::unique_ptr<Publisher> _target_point_pub;
     std::unique_ptr<Publisher> _tracked_point_pub;
 
+    std::unique_ptr<Publisher> _workspace_center_pub;
+
+    std::unique_ptr<Publisher> _dataset_pub;
+    std::unique_ptr<Publisher> _classifier_pub;
+
     std::unique_ptr<Publisher> _db_request_publisher;
     std::unique_ptr<Subscriber> _db_status_subscriber;
 
     std::unique_ptr<ip::workspace_t> _workspace;
 
     // Initial saliency map
+    std::string _dataset_path;
+    iagmm::TrainingData _dataset;
     std::string _classifier_path;
-    iagmm::TrainingData _saliency_dataset;
-    iagmm::NNMap _saliency_classifier;
+    Classifier _saliency_classifier;
     std::string _saliency_modality;
+    int _saliency_sample_size;
     ip::saliency_map_t _saliency_weights;
 
     // Objects
     ip::SurfaceOfInterest _surface;
     std::vector<ObjectHyp> _objects_hypotheses;
     std::string _modality;
+    int _sample_size;
     std::map<size_t, ip::saliency_map_t> _weights;
     size_t _hypothesis_id;
 
@@ -464,9 +531,8 @@ private:
     ip::PointCloudT::Ptr _result_ptcl;
     Eigen::Affine3f _tracked_transformation;
     int _track_count = 0;
-    double _downsampling_grid_size = 0.003;
+    double _downsampling_grid_size = 0.001;
     std::shared_ptr<KLDAdaptiveParticleFilterOMPTracker<ip::PointT, ParticleXYZRPY> > _tracker;
-
 
 
     bool _robot_controller_ready = true;
@@ -478,22 +544,13 @@ private:
 
     int _counter_iter;
     int _nb_iter;
+    int _nb_samples;
 
     ip::SurfaceOfInterest _extract_surface(const std::string& saliency_modality, const std::string& modality)
     {
         ROS_INFO_STREAM("BABBLING_NODE : extracting supervoxels");
 
-        // Image
-        sensor_msgs::ImageConstPtr depth_msg(new sensor_msgs::Image(_images_sub->get_depth()));
-        sensor_msgs::ImageConstPtr rgb_msg(new sensor_msgs::Image(_images_sub->get_rgb()));
-        sensor_msgs::CameraInfoConstPtr info_msg(new sensor_msgs::CameraInfo(_images_sub->get_rgb_info()));
-
-        if (rgb_msg->data.empty() || depth_msg->data.empty()) {
-            ROS_ERROR_STREAM("BABBLING_NODE : empty cloud");
-            throw std::runtime_error("BABBLING_NODE : empty cloud");
-        }
-
-        rgbd_utils::RGBD_to_Pointcloud converter(depth_msg, rgb_msg, info_msg);
+        rgbd_utils::RGBD_to_Pointcloud converter(_depth_msg, _rgb_msg, _info_msg);
 
         sensor_msgs::PointCloud2 ptcl_msg = converter.get_pointcloud();
 
@@ -519,7 +576,9 @@ private:
         }
 
         surface.compute_feature(saliency_modality);
-        surface.compute_feature(modality);
+        if (modality != saliency_modality) {
+            surface.compute_feature(modality);
+        }
 
         return surface;
     }
@@ -541,22 +600,20 @@ private:
         return weights;
     }
 
-
-
     ObjectHyp _new_hypothesis(ip::SurfaceOfInterest& surface,
                               const std::string& saliency_modality,
                               const std::string& modality)
     {
         ROS_INFO_STREAM("BABBLING_NODE : creating new object hypothesis");
 
-        std::vector<std::vector<uint32_t>> regions = surface.extract_regions(saliency_modality, 0.5);
+        std::vector<std::set<uint32_t>> regions = surface.extract_regions(saliency_modality, 0.5);
         if (regions.size() == 0 ) {
             ROS_ERROR_STREAM("BABBLING_NODE : no region detected");
             throw std::runtime_error("BABBLING_NODE : no region detected");
         }
 
-        // Select region
-        std::vector<uint32_t> max_region = regions[0];
+        // Select region (@TODO : select according previous object hyp)
+        std::set<uint32_t> max_region = regions[0];
         for (const auto& region : regions)
         {
             if (region.size() > max_region.size()) {
@@ -565,8 +622,7 @@ private:
         }
 
         // Init classifier
-        int n_feat = surface.get_feature(max_region[0], modality).size();
-        Classifier classifier(n_feat,2);
+        Classifier classifier(_sample_size, 2);
 
         // Compute center
         Eigen::Vector4d center;
@@ -575,49 +631,6 @@ private:
 
         ObjectHyp hyp(classifier, saliency_modality, modality, center);
         return hyp;
-    }
-
-    size_t _choose_hypothesis(ip::SupervoxelSet& supervoxels,
-                              std::vector<ObjectHyp>& objects_hypotheses)
-    {
-        ROS_INFO_STREAM("BABBLING_NODE : choosing object hypothesis");
-
-        return 0;
-    }
-
-    uint32_t _choose_target(ip::saliency_map_t& map)
-    {
-        ROS_INFO_STREAM("BABBLING_NODE : choosing target");
-
-        // std::vector<uint32_t> candidates;
-        // for (const auto& e : map)
-        // {
-        //     if (e.second > 0.5) {
-        //         candidates.push_back(e.first);
-        //     }
-        // }
-        //
-        // if (candidates.size() == 0) {
-        //     ROS_ERROR_STREAM("BABBLING_NODE : no candidates for target");
-        //     return 0;
-        // }
-        // else {
-        //     int i = rand() % candidates.size();
-        //     return candidates[i];
-        // }
-
-        uint32_t max_label = 0;
-        double max_weight = 0;
-
-        for (const auto& e : map)
-        {
-            if (e.second > max_weight) {
-                max_label = e.first;
-                max_weight = e.second;
-            }
-        }
-
-        return max_label;
     }
 
     void _start_tracking()
@@ -643,7 +656,7 @@ private:
         std::vector<double> initial_noise_covariance = std::vector<double>(6, 0.00001);
         std::vector<double> default_initial_mean = std::vector<double>(6, 0.0);
 
-        _tracker.reset(new KLDAdaptiveParticleFilterOMPTracker<ip::PointT, ParticleXYZRPY>(16));
+        _tracker.reset(new KLDAdaptiveParticleFilterOMPTracker<ip::PointT, ParticleXYZRPY>(30));
 
         ParticleXYZRPY bin_size;
         bin_size.x = 0.1f;
@@ -663,7 +676,7 @@ private:
         _tracker->setInitialNoiseMean(default_initial_mean);
         _tracker->setIterationNum(1);
         _tracker->setParticleNum(600);
-        _tracker->setResampleLikelihoodThr(0.00);
+        _tracker->setResampleLikelihoodThr(0.05);
         _tracker->setUseNormal(false);
 
 
@@ -685,7 +698,7 @@ private:
 
         boost::shared_ptr<pcl::search::Octree<ip::PointT> > search (new pcl::search::Octree<ip::PointT>(0.01));
         coherence->setSearchMethod(search);
-        coherence->setMaximumDistance(0.01);
+        coherence->setMaximumDistance(0.005);
 
         _tracker->setCloudCoherence(coherence);
 
@@ -722,7 +735,7 @@ private:
         sensor_msgs::ImageConstPtr rgb_msg(new sensor_msgs::Image(msg->rgb));
         sensor_msgs::CameraInfoConstPtr info_msg(new sensor_msgs::CameraInfo(msg->rgb_info));
 
-        if (rgb_msg->data.empty() || depth_msg->data.empty()) {
+        if (rgb_msg->data.empty() && depth_msg->data.empty()) {
             ROS_ERROR_STREAM("BABBLING_NODE : tracking empty cloud");
             return;
         }
@@ -733,6 +746,7 @@ private:
         ip::PointCloudT::Ptr cloud = ip::PointCloudT::Ptr(new ip::PointCloudT);
         ip::PointCloudT::Ptr cloud_downsampled = ip::PointCloudT::Ptr(new ip::PointCloudT);
         pcl::fromROSMsg(ptcl_msg, *cloud);
+        _workspace->filter(cloud);
         _grid_sample_approx(cloud, *cloud_downsampled, _downsampling_grid_size);
 
         _tracker->setInputCloud(cloud_downsampled);
@@ -791,6 +805,24 @@ private:
 
         // send additional data like classifier
 
+        Classifier classifier = _objects_hypotheses[_hypothesis_id].get_classifier();
+        if (classifier.dataset_size() != 0){
+            _dataset_pub->publish(
+                _training_data_to_ros_msg(
+                    _modality,
+                    classifier.get_samples()
+                )
+            );
+
+            std::stringstream sstream;
+            boost::archive::text_oarchive oarch(sstream);
+            oarch << classifier;
+            object_babbling::gmm_archive msg;
+            msg.archive.data = sstream.str();
+            msg.type.data = _modality;
+            _classifier_pub->publish(msg);
+        }
+
         // wait them to arrive
         std::this_thread::sleep_for(std::chrono::milliseconds(150));
 
@@ -836,6 +868,12 @@ private:
         }
     }
 
+    bool _bored(ObjectHyp& object)
+    {
+        int nb_s = object.get_classifier().dataset_size();
+        return nb_s > _nb_samples;
+    }
+
     void _update_workspace()
     {
         XmlRpc::XmlRpcValue wks;
@@ -851,13 +889,51 @@ private:
                   static_cast<double>(wks["sphere"]["radius"]),
                   static_cast<double>(wks["sphere"]["threshold"]),
                  {static_cast<double>(wks["csg_intersect_cuboid"]["x_min"]),
-				          static_cast<double>(wks["csg_intersect_cuboid"]["x_max"]),
+                  static_cast<double>(wks["csg_intersect_cuboid"]["x_max"]),
                   static_cast<double>(wks["csg_intersect_cuboid"]["y_min"]),
-				          static_cast<double>(wks["csg_intersect_cuboid"]["y_max"]),
+                  static_cast<double>(wks["csg_intersect_cuboid"]["y_max"]),
                   static_cast<double>(wks["csg_intersect_cuboid"]["z_min"]),
-				          static_cast<double>(wks["csg_intersect_cuboid"]["z_max"])}
+                  static_cast<double>(wks["csg_intersect_cuboid"]["z_max"])}
                 )
         );
+    }
+
+    void _publish_workspace_center() {
+        ROS_INFO_STREAM("BABBLING_NODE : computing workspace center");
+        do {
+            _depth_msg = sensor_msgs::ImageConstPtr(new sensor_msgs::Image(_images_sub->get_depth()));
+            _rgb_msg = sensor_msgs::ImageConstPtr(new sensor_msgs::Image(_images_sub->get_rgb()));
+            _info_msg = sensor_msgs::CameraInfoConstPtr(new sensor_msgs::CameraInfo(_images_sub->get_rgb_info()));
+        } while (_rgb_msg->data.empty() || _depth_msg->data.empty());
+
+        rgbd_utils::RGBD_to_Pointcloud converter(_depth_msg, _rgb_msg, _info_msg);
+        sensor_msgs::PointCloud2 ptcl_msg = converter.get_pointcloud();
+        _workspace_ptcl = ip::PointCloudT::Ptr(new ip::PointCloudT);
+        pcl::fromROSMsg(ptcl_msg, *_workspace_ptcl);
+        _workspace->filter(_workspace_ptcl);
+
+        ip::PointT min_bound, max_bound;
+        pcl::getMinMax3D(*_workspace_ptcl, min_bound, max_bound);
+
+        Vector3d center_camera_frame;
+        center_camera_frame << (max_bound.x + min_bound.x)/2,
+                               (max_bound.y + min_bound.y)/2,
+                               (max_bound.z + min_bound.z)/2;
+
+        Vector3d center_robot_frame;
+        babbling::tf_base_conversion(center_robot_frame, center_camera_frame);
+
+        ROS_INFO_STREAM("BABBLING_NODE : sending center (" << center_robot_frame(0) << ", "
+                                                           << center_robot_frame(1) << ", "
+                                                           << center_robot_frame(2) << ")");
+
+        std_msgs::Float64MultiArray center_msg;
+        center_msg.data.resize(3);
+        center_msg.data[0] = center_robot_frame(0);
+        center_msg.data[1] = center_robot_frame(1);
+        center_msg.data[2] = center_robot_frame(2);
+
+        _workspace_center_pub->publish(center_msg);
     }
 
     void _grid_sample_approx (const ip::PointCloudT::ConstPtr &cloud, ip::PointCloudT &result, double leaf_size)
@@ -866,6 +942,27 @@ private:
         grid.setLeafSize(static_cast<float>(leaf_size), static_cast<float>(leaf_size), static_cast<float>(leaf_size));
         grid.setInputCloud(cloud);
         grid.filter(result);
+    }
+
+    dataset _training_data_to_ros_msg(const std::string& type, const iagmm::TrainingData& tr_data)
+    {
+        dataset dataset_msg;
+        sv_feature temp_feature;
+
+        dataset_msg.type.data = type;
+
+        iagmm::TrainingData::data_t dataset = tr_data.get();
+        std::vector<double> data_vct(dataset[0].second.rows());
+        for (const auto& data : dataset) {
+
+            for(int i = 0; i < data.second.rows(); i++)
+                data_vct[i] = data.second(i);
+            temp_feature.feature = data_vct;
+            temp_feature.label = data.first;
+
+            dataset_msg.features.push_back(temp_feature);
+        }
+        return dataset_msg;
     }
 
     iagmm::TrainingData load_dataset(const std::string& filename)
@@ -908,6 +1005,7 @@ int main(int argc, char** argv)
     Babbling babbling(cafer["mgmt"], cafer["type"], cafer["freq"], cafer["uuid"]);
 
     babbling.wait_for_init();
+    babbling.spin();
 
     ROS_INFO_STREAM("BABBLING_NODE : Babbling ready !");
 

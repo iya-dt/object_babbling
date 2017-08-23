@@ -21,7 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
   actionlib
   actionlib_msgs
   rgbd_utils
-  crustcrawler_mover_utils
+  baxter_mover_utils
   moveit_ros_planning_interface
 )
 
@@ -47,7 +47,7 @@ find_path(IAGMM_INCLUDE_DIR iagmm)
 find_library(IAGMM_LIBRARY NAMES iagmm)
 
 ## Crustcrawler
-set(ROBOT_SOURCE_FILES src/crustcrawler_moveit_utils.cpp)
+set(ROBOT_SOURCE_FILES src/baxter_moveit_utils.cpp)
 set(ROBOT_LIBS ${catkin_LIBRARIES})
 
 set(CAMERA_SOURCE_FILES src/motion_detector_node.cpp)
@@ -91,6 +91,8 @@ add_message_files(
   joints_values.msg
   motion_rect.msg
   sv_feature.msg
+  dataset.msg
+  gmm_archive.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -206,7 +208,7 @@ add_dependencies(db_manager_node object_babbling_generate_messages_cpp ${catkin_
 target_link_libraries(motion_detector_node ${catkin_LIBRARIES} image_processing iagmm ${OpenCV_LIBRARIES} tbb)
 target_link_libraries(babbling_node ${catkin_LIBRARIES} image_processing iagmm ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} yaml-cpp.so tbb)
 target_link_libraries(db_manager_node ${catkin_LIBRARIES} ${BASE64} yaml-cpp.so)
-target_link_libraries(controller_node ${ROBOT_LIBS})
+target_link_libraries(controller_node ${catkin_LIBRARIES} ${ROBOT_LIBS})
 target_link_libraries(supervisor_node ${catkin_LIBRARIES})
 
 #############
