@@ -606,14 +606,14 @@ private:
     {
         ROS_INFO_STREAM("BABBLING_NODE : creating new object hypothesis");
 
-        std::vector<std::vector<uint32_t>> regions = surface.extract_regions(saliency_modality, 0.5);
+        std::vector<std::set<uint32_t>> regions = surface.extract_regions(saliency_modality, 0.5);
         if (regions.size() == 0 ) {
             ROS_ERROR_STREAM("BABBLING_NODE : no region detected");
             throw std::runtime_error("BABBLING_NODE : no region detected");
         }
 
         // Select region (@TODO : select according previous object hyp)
-        std::vector<uint32_t> max_region = regions[0];
+        std::set<uint32_t> max_region = regions[0];
         for (const auto& region : regions)
         {
             if (region.size() > max_region.size()) {
