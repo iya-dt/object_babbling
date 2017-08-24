@@ -80,6 +80,9 @@ public:
         client_disconnect_from_ros();
     }
 
+    /**
+     *@brief Connect to ros.
+     */
     void client_connect_to_ros() override
     {
         std::stringstream display_params;
@@ -201,6 +204,9 @@ public:
         );
     }
 
+    /**
+     *@brief Init.
+     */
     void init() override
     {
         client_connect_to_ros();
@@ -232,6 +238,9 @@ public:
         usleep(1e6);
     }
 
+    /**
+     *@brief Disconnect from ros.
+     */
     void client_disconnect_from_ros() override
     {
         cafer_core::DBManager db_request;
@@ -272,6 +281,9 @@ public:
         _db_status_subscriber.reset();
     }
 
+    /**
+     *@brief Update.
+     */
     void update() override
     {
         std::string supervisor_name =
@@ -424,11 +436,18 @@ public:
         publish_feedback();
     }
 
+    /**
+     *@brief Is the object babbling finished ?
+     *@return true if the object babbling is finished, false otherwise
+     */
     bool is_finish()
     {
         return _counter_iter>=_nb_iter;
     }
 
+    /**
+     *@brief Publish pointclouds feedback at each update() call.
+     */
     void publish_feedback()
     {
         // target
@@ -546,6 +565,13 @@ private:
     int _nb_iter;
     int _nb_samples;
 
+    /**
+     *@brief Extract the surface of interrest from the current pointcloud. Precompute
+     *       the features for the saliency modality and the object classifier modality.
+     *@param the saliency modality
+     *@param the object classifier modality
+     *@return the surface of interrest
+     */
     ip::SurfaceOfInterest _extract_surface(const std::string& saliency_modality, const std::string& modality)
     {
         ROS_INFO_STREAM("BABBLING_NODE : extracting supervoxels");
@@ -583,6 +609,12 @@ private:
         return surface;
     }
 
+    /**
+     *@brief Compute the object saliency maps of all objects hypotheses.
+     *@param the surface of interrest
+     *@param the objects hypotheses
+     *@return the object saliency maps
+     */
     std::map<size_t, ip::saliency_map_t> _compute_object_weights(ip::SurfaceOfInterest& surface,
                                                             std::vector<ObjectHyp>& objects_hypotheses)
     {
@@ -600,6 +632,13 @@ private:
         return weights;
     }
 
+    /**
+     *@brief Create new object hypothesis.
+     *@param the surface of interrest
+     *@param the saliency modality
+     *@param the object classifier modality
+     *@return the object hypothesis
+     */
     ObjectHyp _new_hypothesis(ip::SurfaceOfInterest& surface,
                               const std::string& saliency_modality,
                               const std::string& modality)
@@ -633,6 +672,9 @@ private:
         return hyp;
     }
 
+    /**
+     *@brief Start tracking.
+     */
     void _start_tracking()
     {
         ROS_INFO_STREAM("BABBLING_NODE : starting tracking");
@@ -719,6 +761,9 @@ private:
         _tracker->setTrans(trans);
     }
 
+    /**
+     *@brief Stop tracking.
+     */
     void _stop_tracking()
     {
         ROS_INFO_STREAM("BABBLING_NODE : stoping tracking");
@@ -729,6 +774,9 @@ private:
         _tracked_ptcl = ip::PointCloudT::Ptr(new ip::PointCloudT);
     }
 
+    /**
+     *@brief Callback fonction used durring the tracking to process pointclouds.
+     */
     void _image_processing_callback(const rgbd_motion_data::ConstPtr&  msg)
     {
         sensor_msgs::ImageConstPtr depth_msg(new sensor_msgs::Image(msg->depth));
@@ -775,6 +823,9 @@ private:
         _tracked_ptcl_pub->publish(tracked_ptcl_msg);
     }
 
+    /**
+     *@brief Start DB recording.
+     */
     void _start_db_recording()
     {
         std::string supervisor_name =
@@ -798,6 +849,9 @@ private:
         _recording = true;
     }
 
+    /**
+     *@brief Send the current object classifier then stop DB recording.
+     */
     void _stop_db_recording()
     {
         std::string supervisor_name =
@@ -843,6 +897,9 @@ private:
         _recording = false;
     }
 
+    /**
+     *@brief Callback for the DBManager.
+     */
     void _done_callback(const cafer_core::DBManagerConstPtr& status_msg)
     {
         std::string supervisor_name =
@@ -868,12 +925,19 @@ private:
         }
     }
 
+    /**
+     *@brief Should the babbling continue with the current object or change ?
+     *@return true if the object babbling should start a new object hypothesis, false otherwise.
+     */
     bool _bored(ObjectHyp& object)
     {
         int nb_s = object.get_classifier().dataset_size();
         return nb_s > _nb_samples;
     }
 
+    /**
+     *@brief Update the workspace.
+     */
     void _update_workspace()
     {
         XmlRpc::XmlRpcValue wks;
@@ -898,6 +962,10 @@ private:
         );
     }
 
+    /**
+     *@brief Send the workspace center to the robot controller so it could push
+     *       the objects towards this center. The sent center is in the robot frame.
+     */
     void _publish_workspace_center() {
         ROS_INFO_STREAM("BABBLING_NODE : computing workspace center");
         do {
@@ -936,6 +1004,12 @@ private:
         _workspace_center_pub->publish(center_msg);
     }
 
+    /**
+     *@brief Filter function to downsample pointclouds.
+     *@param initial cloud
+     *@param result cloud (output)
+     *@param leaf size for the approximate voxel grid
+     */
     void _grid_sample_approx (const ip::PointCloudT::ConstPtr &cloud, ip::PointCloudT &result, double leaf_size)
     {
         pcl::ApproximateVoxelGrid<ip::PointT> grid;
@@ -944,6 +1018,12 @@ private:
         grid.filter(result);
     }
 
+    /**
+     *@brief Create a dataset message from a dataset.
+     *@param the modality of the dataset
+     *@param the dataset
+     *@return the dataset message
+     */
     dataset _training_data_to_ros_msg(const std::string& type, const iagmm::TrainingData& tr_data)
     {
         dataset dataset_msg;
@@ -965,6 +1045,11 @@ private:
         return dataset_msg;
     }
 
+    /**
+     *@brief Load dataset from file.
+     *@param the full path of the file
+     *@return the dataset
+     */
     iagmm::TrainingData load_dataset(const std::string& filename)
     {
         iagmm::TrainingData dataset;
