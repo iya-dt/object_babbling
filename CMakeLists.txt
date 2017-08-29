@@ -187,6 +187,9 @@ add_executable(controller_node ${ROBOT_SOURCE_FILES})
 add_executable(db_manager_node ${DATABASE_SOURCE_FILES})
 add_executable(supervisor_node ${SUPERVISOR_SOURCE_FILES})
 
+add_executable(manual_dataset_build_node tools/manual_dataset_build.cpp)
+add_executable(object_babbling_evaluation_node tools/object_babbling_evaluation.cpp)
+
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
 ## target back to the shorter version for ease of user use
@@ -201,7 +204,9 @@ add_dependencies(babbling_node object_babbling_generate_messages_cpp ${catkin_EX
 add_dependencies(controller_node object_babbling_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
 add_dependencies(db_manager_node object_babbling_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
 
-## Specify libraries to link a library or executable target against
+add_dependencies(manual_dataset_build_node object_babbling_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
+add_dependencies(object_babbling_evaluation_node object_babbling_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
+
 # target_link_libraries(${PROJECT_NAME}_node
 #   ${catkin_LIBRARIES}
 # )
@@ -210,6 +215,9 @@ target_link_libraries(babbling_node ${catkin_LIBRARIES} image_processing iagmm $
 target_link_libraries(db_manager_node ${catkin_LIBRARIES} ${BASE64} yaml-cpp.so)
 target_link_libraries(controller_node ${catkin_LIBRARIES} ${ROBOT_LIBS})
 target_link_libraries(supervisor_node ${catkin_LIBRARIES})
+
+target_link_libraries(manual_dataset_build_node ${catkin_LIBRARIES} image_processing iagmm ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} yaml-cpp.so tbb)
+target_link_libraries(object_babbling_evaluation_node ${catkin_LIBRARIES} image_processing iagmm ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} yaml-cpp.so tbb)
 
 #############
 ## Install ##

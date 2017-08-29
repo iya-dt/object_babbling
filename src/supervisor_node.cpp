@@ -1,7 +1,3 @@
-//Created by
-//phlf on
-//20/05/16.
-
 #include <ros/ros.h>
 #include <ros/package.h>
 #include <globals.h>
